@@ -41,12 +41,46 @@ Todas são configuráveis no `.env`.
 No Windows, use **Git Bash** ou **WSL** para rodar os scripts `.sh` — eles não
 funcionam no `cmd.exe` nem no PowerShell.
 
+> **Sem Docker na sua máquina?** Máquinas corporativas costumam bloquear a
+> instalação (exige privilégio administrativo para habilitar WSL2/Hyper-V). O
+> repositório traz um `.devcontainer/` que roda o ambiente inteiro no
+> **GitHub Codespaces**, pelo navegador — veja a seção seguinte.
+> A escolha entre os ambientes e o impacto de cada um na medição de desempenho
+> estão em [`docs/ambientes.md`](docs/ambientes.md).
+
+---
+
+## Rodando no GitHub Codespaces
+
+Não instala nada na máquina. No GitHub, no botão **Code → Codespaces →
+New with options**, escolha o tipo de máquina de **4 núcleos / 16 GB** e crie.
+
+O tipo padrão de **2 núcleos / 8 GB não funciona**: o Oracle é morto pelo OOM
+killer. O `.devcontainer/devcontainer.json` declara esse requisito, então a
+interface já filtra os tipos compatíveis.
+
+Quando o Codespace abrir:
+
+```bash
+make setup && make up && make validate
+```
+
+Dois cuidados com a cota (120 core-hours/mês no plano Free, 180 no Pro):
+
+- o consumo é multiplicado pelo número de núcleos, então 4 núcleos consomem
+  **4 core-hours por hora** — cerca de 30 h/mês no Free;
+- **apague o codespace ao terminar**, não apenas pare. Armazenamento é cobrado
+  enquanto ele existir. `make up` reconstrói tudo a partir dos DDLs.
+
+Aumente o *idle timeout* padrão de 30 min em *Settings → Codespaces* para não
+perder o ambiente no meio de um experimento.
+
 ---
 
 ## Subindo o ambiente do zero
 
 ```bash
-git clone <url-do-repo> projudi-log-offload
+git clone https://github.com/LucasRPorto/projudi-log-offload.git
 cd projudi-log-offload
 
 ./scripts/setup.sh     # ou: make setup
@@ -146,6 +180,7 @@ se falhar, nada mais é afetado.
 ```bash
 make help              # lista todos os alvos
 make up                # sobe e espera ficar saudável
+make up-lite           # só ClickHouse + Kafka (~3 GB), para máquinas pequenas
 make down              # para, preservando os dados
 make restart           # reinicia sem apagar dados
 make reset             # APAGA os volumes e recria do zero (pede confirmação)
@@ -186,8 +221,10 @@ diretamente no Git Bash.
 
 ```
 projudi-log-offload/
+├── .devcontainer/              ambiente para GitHub Codespaces / Dev Containers
 ├── docs/
 │   ├── arquitetura.md          visão das duas soluções + diagrama
+│   ├── ambientes.md            onde rodar e como testar cada frente
 │   └── decisoes.md             decisões técnicas e justificativas
 ├── infra/
 │   ├── docker-compose.yml      os cinco serviços
@@ -233,16 +270,18 @@ qualquer coisa.
 ### Pouca RAM
 
 Sintoma típico: o Oracle sobe e morre, ou o ClickHouse é morto pelo OOM killer.
-No Docker Desktop, aumente em *Settings → Resources → Memory* (mínimo 12 GB). Se
-não for possível, suba um subconjunto:
+No Docker Desktop, aumente em *Settings → Resources → Memory* (mínimo 12 GB).
+
+Se a máquina não chega lá, use o modo reduzido — ClickHouse e Kafka apenas,
+cerca de 3 GB:
 
 ```bash
-# só a Solução 1: dispensa Kafka, Connect e Oracle
-docker compose --env-file .env -f infra/docker-compose.yml up -d clickhouse
+make up-lite
 ```
 
-(Nesse caso o `clickhouse` depende do `kafka` no compose; remova a dependência
-localmente ou aceite que o Kafka suba junto.)
+Ele serve para iterar o `log-writer` (Frente B). **Não serve para o benchmark:**
+sem o Oracle local não existe grupo de controle — ver
+[`docs/ambientes.md`](docs/ambientes.md), seção 3.
 
 ### `ClassNotFoundException: oracle.jdbc.OracleDriver` ao registrar o conector
 
@@ -333,3 +372,15 @@ O que a Frente A garante para elas:
   classpath;
 - `./scripts/register-connector.sh` funcionando;
 - `make validate` como critério objetivo de "o ambiente está são".
+
+### Estado da validação
+
+A Frente A foi construída numa máquina sem Docker disponível, então a
+verificação feita até aqui é **estática**: sintaxe dos scripts, YAML e XML bem
+formados, consistência de nomes e ordem das colunas entre o Oracle, a tabela
+destino e a MATERIALIZED VIEW, e existência de todas as tags de imagem e
+artefatos Maven referenciados.
+
+**A primeira execução real ainda não aconteceu.** O que ela precisa confirmar
+está listado em [`docs/decisoes.md`](docs/decisoes.md), seção 16. O critério é
+`make validate` terminar com `0 falharam`.

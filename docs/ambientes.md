@@ -9,12 +9,13 @@ desempenho.
 
 ## 1. A restrição
 
-O notebook do TJ-GO (`TJGO\lrporto`) é um domínio corporativo com usuário sem
-privilégio administrativo. Verificado em 2026-07-21:
+O notebook de trabalho é uma máquina Windows ingressada no domínio corporativo
+do TJ-GO, com conta de usuário sem privilégio administrativo. Verificado em
+2026-07-21:
 
 | Item | Estado |
 |---|---|
-| Grupo Administradores local | não inclui o usuário de domínio |
+| Grupo Administradores local | não inclui a conta de domínio usada |
 | `Microsoft-Windows-Subsystem-Linux` | **desabilitado** (`InstallState = 2`) |
 | `VirtualMachinePlatform` | **desabilitado** |
 | `HypervisorPlatform` | **desabilitado** |

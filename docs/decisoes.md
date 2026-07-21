@@ -325,9 +325,15 @@ está documentado no topo do `.env.example` e do compose.
 
 ## 16. Pendências de validação
 
-O ambiente foi construído numa máquina Windows **sem Docker instalado**
-(`docker` não está no PATH, Docker Desktop não instalado, WSL sem distribuição).
-Não foi possível executar `setup.sh`, `make up` nem `make validate` nesta sessão.
+O ambiente foi construído numa máquina Windows **sem Docker e sem possibilidade
+de instalá-lo**: conta de domínio corporativo sem privilégio administrativo, com
+WSL2, VirtualMachinePlatform, HypervisorPlatform e Hyper-V desabilitados na
+imagem do sistema. Não foi possível executar `setup.sh`, `make up` nem
+`make validate` na sessão em que o código foi escrito.
+
+A primeira execução real cabe ao ambiente de referência do projeto — ver
+`docs/ambientes.md`, seção 6. **Enquanto `make validate` não terminar com
+`0 falharam` numa execução real, considere a Frente A como não homologada.**
 
 O que **foi** verificado estaticamente:
 
@@ -353,3 +359,43 @@ O que **não** foi verificado e precisa de uma execução real:
 
 O caminho fim a fim do CDC (Oracle → Kafka → ClickHouse) é escopo da Frente C e
 **não** faz parte do critério de aceite desta sessão.
+
+---
+
+## 17. Ambiente em container (`.devcontainer/`)
+
+A máquina de desenvolvimento principal não roda containers (seção 16), e a
+alternativa pessoal disponível tem 8 GB de RAM — insuficiente para a pilha
+completa. Sem uma saída, a Frente A ficaria escrita mas nunca executada.
+
+**Escolhido:** um `.devcontainer/devcontainer.json` com a feature
+`docker-in-docker`, que faz o repositório rodar em **GitHub Codespaces** (pelo
+navegador, sem instalar nada) ou em qualquer host Linux via VS Code Dev
+Containers. O `docker-compose.yml` não muda em nada: o devcontainer apenas o
+embrulha.
+
+Detalhes que não são óbvios:
+
+- **`hostRequirements` pede 4 núcleos / 16 GB / 32 GB de disco.** O tipo padrão
+  de 2 núcleos não comporta Oracle + Kafka + Connect + ClickHouse. E o disco
+  precisa ser exatamente 32 GB: pedir mais empurra a seleção para o tipo de 8
+  núcleos, que consome a cota do Codespaces duas vezes mais rápido sem nenhum
+  ganho.
+- **Java 8 e Maven vêm instalados**, para que a Frente B comece sem preparo.
+- **O download das imagens não é feito no `postCreateCommand`.** Levaria vários
+  minutos, e um timeout na criação do Codespace é bem mais difícil de
+  diagnosticar do que um `make setup` que falha com mensagem clara.
+
+**Efeito colateral positivo, e o motivo de isso valer para a defesa:** com o
+repositório público e o devcontainer versionado, qualquer avaliador reproduz o
+ambiente inteiro em um clique, com a própria cota do GitHub. O trabalho deixa de
+depender da descrição de um ambiente e passa a ser executável por terceiros.
+
+**Multi-arquitetura:** todas as cinco imagens publicam `linux/amd64` e
+`linux/arm64`, verificado nos registries. Windows, Linux, Mac Intel e Mac Apple
+Silicon rodam nativamente, sem emulação — o que permite que a dupla trabalhe em
+máquinas diferentes.
+
+A restrição que sobra está em `docs/ambientes.md`, seção 5: **os números finais
+de benchmark precisam sair de um único ambiente de referência.** Ambientes
+diferentes produzem medições que não se combinam.
