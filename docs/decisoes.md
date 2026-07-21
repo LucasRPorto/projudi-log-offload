@@ -363,9 +363,28 @@ disponíveis ao daemon, em modo reduzido (`make up-lite && make validate-lite`):
 | **`proc_cdc_mv`** — a MATERIALIZED VIEW com `JSONExtract`, `accurateCastOrNull` e `toDateTime64` sobre `Nullable` | ✅ |
 | `90_app_user.sh` executado por *source* (sem bit de execução) e usuário `projudi_app` criado | ✅ |
 | Healthchecks, rede e volumes nomeados do compose | ✅ |
+| Escrita e leitura em `log_raw` pelo usuário `projudi_app` (item `e`) | ✅ |
+
+Resultado final do `make validate-lite`: **16 itens passaram, 0 falharam,
+0 avisos.**
 
 O risco número 1 da lista anterior — "a MV aceita as expressões" — **está
 eliminado**: se qualquer expressão fosse inválida, a MV não teria sido criada.
+
+A execução também expôs dois defeitos no próprio `validate.sh`, ambos
+corrigidos, e ambos invisíveis à verificação estática:
+
+1. **Falso negativo por corrida.** O `healthy` do Docker garante que o servidor
+   aceita conexão, não que terminou de carregar os metadados. Consultas nessa
+   janela voltavam vazias, e o relatório chegou a imprimir "banco projudi_logs
+   NÃO existe" duas linhas acima de "projudi_logs.log_raw existe".
+2. **Travamento por prompt invisível.** As chamadas ao cliente eram silenciadas
+   com `>/dev/null 2>&1`; quando o cliente pediu entrada, o prompt foi
+   redirecionado junto e o script ficou parado indefinidamente. Corrigido com
+   `</dev/null` e teto de tempo em toda chamada.
+
+Os dois são a justificativa empírica para não tratar verificação estática como
+substituto de execução.
 
 ### O que ainda depende do ambiente de referência
 
@@ -376,7 +395,6 @@ eliminado**: se qualquer expressão fosse inválida, a MV não teria sido criada
 | Scripts de `initdb.d` do Oracle executam com o bit de execução vindo do checkout | log do container: `make logs s=oracle` |
 | Kafka Connect no ar e plugin Oracle do Debezium listado | item `d` do `make validate` |
 | Compatibilidade cp-kafka 8.0.6 × Debezium 3.6 | item `d` do `make validate` |
-| Escrita e leitura pelo usuário de aplicação (item `e`) | saída da primeira execução ficou truncada; reexecutar |
 
 O caminho fim a fim do CDC (Oracle → Kafka → ClickHouse) é escopo da Frente C e
 **não** faz parte do critério de aceite desta sessão.
