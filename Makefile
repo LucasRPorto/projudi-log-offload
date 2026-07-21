@@ -16,7 +16,7 @@ DC           := docker compose --env-file .env -f $(COMPOSE_FILE)
 s ?=
 
 .DEFAULT_GOAL := help
-.PHONY: help setup up down restart reset logs status ps validate ch sql connector connector-status build
+.PHONY: help setup up up-lite down restart reset logs status ps validate ch sql connector connector-status build
 
 help: ## Lista os alvos disponíveis
 	@echo ""
@@ -49,6 +49,16 @@ up: .env ## Sobe todos os serviços e espera ficarem saudáveis
 	@$(MAKE) --no-print-directory status
 	@echo ""
 	@echo "Pronto. Rode 'make validate' para conferir o ambiente."
+
+up-lite: .env ## Sobe só o ClickHouse (para máquinas com pouca RAM)
+	@echo "Subindo apenas o ClickHouse (o Kafka vem junto, é dependência da tabela Kafka engine)..."
+	@$(DC) up -d --wait --wait-timeout 300 clickhouse
+	@echo ""
+	@$(MAKE) --no-print-directory status
+	@echo ""
+	@echo "Modo reduzido: ~3 GB de RAM. Serve para iterar o log-writer (Frente B)."
+	@echo "NÃO serve para o benchmark — sem o Oracle local não há grupo de controle."
+	@echo "Ver docs/ambientes.md, seção 3."
 
 down: ## Para os serviços, preservando os dados
 	@$(DC) down

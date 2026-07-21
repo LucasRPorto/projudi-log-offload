@@ -170,33 +170,130 @@ no ambiente controlado, com chamado formal — não como caminho do MVP.
 
 ---
 
-## 5. Recomendação
+## 5. Trabalho em dupla: ambientes diferentes
 
-**Ambiente principal: máquina pessoal com Docker Desktop.**
+O TCC é feito por duas pessoas. É perfeitamente viável que uma rode Docker
+Desktop localmente e a outra use Codespaces — **o repositório é o mesmo, o
+`docker-compose.yml` é o mesmo, e o `.devcontainer/` só o embrulha**.
 
-Requisito real: **16 GB de RAM** (12 GB dedicados ao Docker) e ~15 GB de disco.
-Com 8 GB não roda a pilha completa — no máximo ClickHouse isolado.
+### Plataforma não é problema
 
-Por quê:
+Todas as cinco imagens são multi-arch (`linux/amd64` **e** `linux/arm64`),
+verificado nos registries:
 
-- sem cota, sem timeout, sem depender de internet;
-- benchmark metodologicamente defensável, com Oracle e ClickHouse no mesmo host;
-- ciclo de desenvolvimento rápido (`make reset && make up` sem pensar em custo);
-- é onde a Frente C, que é a mais demorada de depurar, deve viver.
+| Imagem | Arquiteturas |
+|---|---|
+| `gvenzl/oracle-free:23-slim-faststart` | amd64, arm64 |
+| `clickhouse/clickhouse-server:25.8` | amd64, arm64 |
+| `confluentinc/cp-kafka:8.0.6` | amd64, arm64 |
+| `quay.io/debezium/connect:3.6.0.Final` | amd64, arm64 |
+| `kafbat/kafka-ui:v1.5.0` | amd64, arm64 |
 
-**Ambiente secundário: GitHub Codespaces.**
+Windows, Linux, Mac Intel ou Mac Apple Silicon: todos rodam nativamente, sem
+emulação.
 
-Não como plano B, mas para três coisas que a máquina pessoal não faz:
+### A regra inegociável
 
-1. trabalhar a partir do notebook do TJ-GO, sem depender do TI;
-2. **reprodutibilidade** — repositório público + `.devcontainer/` significa que
-   qualquer pessoa reproduz o ambiente em um clique, com a própria cota. Para
-   um TCC isso vale como artefato de defesa;
-3. validação funcional B.2, expondo o ClickHouse por HTTPS para o Projudi que
-   roda no notebook.
+> **Os números finais do benchmark têm que sair de UM único ambiente.**
 
-**Máquina do TJ-GO: apenas Eclipse + Projudi**, como já é hoje, apontando para a
-base de desenvolvimento/homologação. Nada de infraestrutura roda ali.
+Medir a Solução 1 num Codespace de 4 núcleos compartilhados e a linha de base no
+notebook de outra pessoa produz números que não se combinam — CPU, disco e
+memória diferentes. Isso não é rigor excessivo: é a diferença entre um resultado
+defensável e um resultado descartável.
 
-O mesmo repositório atende os três: o `docker-compose.yml` é idêntico, o
-`.devcontainer/` só embrulha ele para o Codespaces.
+Definam **antes de começar a medir** qual é o *ambiente de referência* (o mais
+robusto dos dois, normalmente a máquina com Docker local), e registrem no
+relatório as especificações dele: CPU, RAM, tipo de disco, versão do Docker.
+Desenvolvimento acontece onde for conveniente; **medição acontece num lugar só**.
+
+### O que já protege contra divergência
+
+| Proteção | Onde | Contra o quê |
+|---|---|---|
+| `eol=lf` forçado | `.gitattributes` | `.sh` com CRLF quebrando dentro do container de quem estiver no Windows |
+| Versões fixadas, nunca `latest` | `.env` | cada pessoa baixar uma versão diferente da mesma imagem |
+| Volumes nomeados para dados | `docker-compose.yml` | diferenças de bind mount entre Windows, macOS e Linux |
+| `make validate` | `scripts/validate.sh` | "na minha máquina funciona" — mesmo checklist objetivo dos dois lados |
+
+### O que NÃO é compartilhado
+
+Os **dados**. Cada ambiente tem os próprios volumes; não há sincronização. Isso
+é bom (ninguém derruba o ambiente do outro), mas significa que:
+
+- o seed do Oracle é o mesmo em ambos, porque vem dos scripts de init;
+- qualquer carga de teste gerada por uma pessoa não aparece para a outra;
+- para comparar resultados, exportem do ClickHouse (`FORMAT Native` ou
+  `FORMAT CSV`) e versionem em `validacao/evidencias/`.
+
+### Divisão de trabalho sugerida
+
+A assimetria dos ambientes casa bem com a divisão das frentes:
+
+**Quem tem Docker local → Frente C (CDC).** É a frente com mais ciclos de
+`make reset && make up`: cada ajuste no supplemental logging ou na configuração
+do conector costuma exigir recriar o Oracle e refazer o snapshot. Local isso é
+grátis e ilimitado; no Codespaces queimaria a cota depressa. É também a frente
+que mais espera o Oracle subir.
+
+**Quem está no Codespaces → Frente B (log-writer).** O ambiente sobe uma vez e o
+trabalho passa a ser iteração de código Java, que consome pouca infraestrutura.
+E é a pessoa com acesso ao notebook do TJ-GO e ao Projudi no Eclipse quem
+precisa fazer a validação funcional B.2 de qualquer forma.
+
+### Máquina com 8 GB de RAM
+
+Não comporta a pilha completa: só o Oracle já quer 2–3 GB, e o Docker Desktop no
+Windows recebe por padrão metade da RAM do host. Mas comporta o modo reduzido:
+
+```bash
+make up-lite      # ClickHouse + Kafka, ~3 GB
+```
+
+Serve para iterar o `log-writer` sem gastar cota do Codespaces. **Não serve para
+o benchmark** — sem o Oracle local não existe grupo de controle (seção 3).
+
+---
+
+## 6. Recomendação
+
+O parque de máquinas disponível, levantado em 2026-07-21:
+
+| Máquina | RAM | Roda a pilha completa? |
+|---|---|---|
+| Notebook TJ-GO | 15 GB | ❌ sem Docker (seção 1) |
+| Máquina pessoal | 8 GB | ❌ só `make up-lite` |
+| Máquina do colega | a confirmar | ✅ se ≥ 16 GB |
+| Codespaces 4 núcleos | 16 GB | ✅ dentro da cota |
+
+### Se a máquina do colega tiver 16 GB ou mais
+
+**Ela é o ambiente de referência.** Todos os números finais do benchmark saem
+dela, e é onde a Frente C deve viver — sem cota, sem timeout, ciclos de
+`make reset && make up` à vontade.
+
+O Codespaces fica com a Frente B e com a reprodutibilidade.
+
+### Se nenhuma máquina chegar a 16 GB
+
+**Codespaces vira o ambiente de referência**, incluindo a medição. Nesse caso:
+
+- solicitem o **GitHub Pro pelo Student Developer Pack** — 45 h/mês em vez de
+  30 h, sem custo;
+- **um dos dois é o dono do ambiente de referência.** Não meçam cada um no
+  próprio codespace: mesmo tipo de máquina, hosts diferentes, resultado
+  diferente;
+- reservem cota. Rodadas de medição consomem horas rapidamente; deixem o
+  desenvolvimento exploratório para `make up-lite` na máquina de 8 GB, que não
+  consome nada.
+
+### Em qualquer cenário
+
+**Notebook do TJ-GO: apenas Eclipse + Projudi**, como já é hoje, apontando para
+a base de desenvolvimento/homologação. Nenhuma infraestrutura roda ali — o papel
+dele é a validação funcional B.2 (seção 4).
+
+**Máquina de 8 GB: `make up-lite`.** Iteração de código do `log-writer` sem
+gastar cota. Nunca medição.
+
+O mesmo repositório atende todos os cenários: o `docker-compose.yml` é idêntico
+em qualquer lugar, e o `.devcontainer/` só o embrulha para o Codespaces.
