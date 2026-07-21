@@ -78,13 +78,49 @@ dc() { docker compose --env-file .env -f "${COMPOSE_FILE}" "$@"; }
 
 trim() { tr -d '\r' | tr -d '[:space:]'; }
 
-ch()     { dc exec -T clickhouse clickhouse-client --query "$1" 2>/dev/null; }
-ch_app() { dc exec -T clickhouse clickhouse-client --user "${CH_APP_USER}" \
-              --password "${CH_APP_PASSWORD}" --query "$1" 2>/dev/null; }
+# -----------------------------------------------------------------------------
+# Duas salvaguardas obrigatórias em toda chamada ao cliente do ClickHouse:
+#
+#   </dev/null  — se o clickhouse-client resolver pedir senha interativamente, o
+#                 prompt vai junto com a saída redirecionada e fica INVISÍVEL; o
+#                 script então espera para sempre por uma digitação que ninguém
+#                 sabe que precisa fazer. Com stdin fechado ele falha na hora,
+#                 com erro legível. Foi exatamente isso que travou o item `e` na
+#                 primeira execução real.
+#
+#   timeout     — uma mutação presa com mutations_sync=1 esperaria indefinidamente.
+#                 Um script de validação que trava é pior que um que falha: não
+#                 dá diagnóstico e ainda consome o tempo de quem está validando.
+#
+# `timeout` não executa funções do shell, por isso o comando do compose aparece
+# por extenso aqui em vez de reaproveitar dc().
+# -----------------------------------------------------------------------------
+CH_TIMEOUT="${CH_TIMEOUT:-60}"
+if command -v timeout >/dev/null 2>&1; then
+    LIMITE="timeout ${CH_TIMEOUT}"
+else
+    LIMITE=""
+    echo "AVISO: 'timeout' não encontrado; as consultas rodam sem teto de tempo." >&2
+fi
+
+ch() {
+    ${LIMITE} docker compose --env-file .env -f "${COMPOSE_FILE}" \
+        exec -T clickhouse clickhouse-client --query "$1" </dev/null 2>/dev/null
+}
+
+ch_app() {
+    ${LIMITE} docker compose --env-file .env -f "${COMPOSE_FILE}" \
+        exec -T clickhouse clickhouse-client \
+        --user "${CH_APP_USER}" --password "${CH_APP_PASSWORD}" \
+        --query "$1" </dev/null 2>/dev/null
+}
 
 # Reexecuta mostrando o erro. Existe porque engolir o stderr das consultas deixa
 # falhas indistinguíveis de "retornou vazio", e o diagnóstico fica impossível.
-ch_erro() { dc exec -T clickhouse clickhouse-client --query "$1" 2>&1 >/dev/null | tail -3; }
+ch_erro() {
+    ${LIMITE} docker compose --env-file .env -f "${COMPOSE_FILE}" \
+        exec -T clickhouse clickhouse-client --query "$1" </dev/null 2>&1 >/dev/null | tail -3
+}
 
 # Consulta que deve devolver um valor exato, com reexecução.
 #
@@ -302,6 +338,22 @@ title "e  ClickHouse — escrita e leitura pelo usuário de aplicação"
 MARCADOR="__validate__"
 ID_TESTE=999999999999
 
+# Antes de qualquer coisa: o usuário de aplicação consegue autenticar?
+# Sem esta checagem, uma falha de autenticação se manifestava lá na frente como
+# "INSERT falhou", sem dizer o motivo.
+if ch_app 'SELECT 1' | trim | grep -qx '1'; then
+    ok "usuário ${CH_APP_USER} autentica no ClickHouse"
+else
+    bad "usuário ${CH_APP_USER} NÃO consegue autenticar"
+    info "erro: $(${LIMITE} docker compose --env-file .env -f "${COMPOSE_FILE}" \
+                    exec -T clickhouse clickhouse-client \
+                    --user "${CH_APP_USER}" --password "${CH_APP_PASSWORD}" \
+                    --query 'SELECT 1' </dev/null 2>&1 >/dev/null | tail -2)"
+    info "confira CH_APP_USER/CH_APP_PASSWORD no .env e o log de ddl/90_app_user.sh"
+fi
+
+# Limpeza de execução anterior. mutations_sync=1 espera a mutação terminar; o
+# teto de tempo de ch_app impede que uma mutação presa trave a validação.
 ch_app "ALTER TABLE projudi_logs.log_raw DELETE WHERE ID_LOG = ${ID_TESTE} SETTINGS mutations_sync = 1" >/dev/null 2>&1
 
 INSERT_OK=1
