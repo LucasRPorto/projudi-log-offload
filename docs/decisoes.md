@@ -371,55 +371,64 @@ O que **foi** verificado estaticamente:
   (43 + 4 de metadata), 13 na `log_raw`;
 - portas 1521, 8080, 8083, 8123, 9000, 9092 e 29092 livres na máquina.
 
-### Confirmado na primeira execução real
+### Estado da validação
 
-Executado em 2026-07-21 numa máquina Linux (WSL) com Docker 28.4 e apenas 3 GB
-disponíveis ao daemon, em modo reduzido (`make up-lite && make validate-lite`):
+**Frente A homologada em 2026-07-21.** `make validate` num ambiente criado do
+zero (`make reset && make up`):
 
-| Item | Resultado |
+```
+32 passaram   0 falharam   0 avisos
+```
+
+Executado numa máquina Linux (WSL) com 8 GB de RAM no host e apenas 3 GB
+disponíveis ao daemon Docker — abaixo do mínimo recomendado de 12 GB, e ainda
+assim suficiente para a pilha completa. O aviso do `setup.sh` continua correto
+como recomendação, mas o piso real é mais baixo que o documentado.
+
+Confirmado em execução, item a item:
+
+| Área | Resultado |
 |---|---|
-| `setup.sh` de ponta a ponta: detecção de Docker/Compose, aviso de RAM, checagem de portas, criação do `.env`, pull das imagens | ✅ |
-| Build da imagem do Connect com o `ojdbc11` baixado do Maven Central (decisão 4) | ✅ |
-| Aplicação dos **6 DDLs** do ClickHouse no primeiro start | ✅ |
-| `CREATE DATABASE ... COMMENT` aceito | ✅ |
-| `log_raw` com os codecs e os data skipping indexes | ✅ |
-| `proc_cdc` criada com exatamente **47 colunas** | ✅ |
-| `proc_cdc_kafka` (engine Kafka, `JSONAsString`) | ✅ |
-| **`proc_cdc_mv`** — a MATERIALIZED VIEW com `JSONExtract`, `accurateCastOrNull` e `toDateTime64` sobre `Nullable` | ✅ |
-| `90_app_user.sh` executado por *source* (sem bit de execução) e usuário `projudi_app` criado | ✅ |
-| Healthchecks, rede e volumes nomeados do compose | ✅ |
-| Escrita e leitura em `log_raw` pelo usuário `projudi_app` (item `e`) | ✅ |
+| `setup.sh` completo, incluindo o build da imagem do Connect com o `ojdbc11` baixado do Maven Central | ✅ |
+| Os 6 DDLs do ClickHouse aplicados no primeiro start | ✅ |
+| `proc_cdc_mv` — a MATERIALIZED VIEW com `JSONExtract`, `accurateCastOrNull` e `toDateTime64` sobre `Nullable` | ✅ |
+| `proc_cdc` com exatamente 47 colunas | ✅ |
+| Usuário `projudi_app` criado e com ciclo completo de escrita e leitura em `log_raw` | ✅ |
+| Oracle: schema `PROJUDI`, as 43 colunas da `PROC`, seed nas 3 tabelas | ✅ |
+| **Todos os datafiles dentro do volume `oracle-data`** (decisão 18) | ✅ |
+| Kafka respondendo, tópicos internos do Connect criados | ✅ |
+| Kafka Connect com o plugin `OracleConnector` e o `ojdbc11` no classpath | ✅ |
+| **Oracle em ARCHIVELOG, aplicado pelo init** (decisão 5) | ✅ |
+| Supplemental logging de banco e `(ALL) COLUMNS` na `PROJUDI.PROC` | ✅ |
+| Usuário `c##dbzuser` existente | ✅ |
 
-Resultado final do `make validate-lite`: **16 itens passaram, 0 falharam,
-0 avisos.**
+### O que a validação encontrou pelo caminho
 
-O risco número 1 da lista anterior — "a MV aceita as expressões" — **está
-eliminado**: se qualquer expressão fosse inválida, a MV não teria sido criada.
+Quatro suposições caíram apenas em execução real, nenhuma detectada pela
+verificação estática:
 
-A execução também expôs dois defeitos no próprio `validate.sh`, ambos
-corrigidos, e ambos invisíveis à verificação estática:
+1. **`ENABLE_ARCHIVELOG` seria interpretada pela imagem** — não é (decisão 5).
+2. **`healthy` do Docker significaria "pronto para consulta"** — não significa;
+   consultas na janela de carregamento de metadados voltavam vazias e o
+   relatório chegou a imprimir "banco X NÃO existe" duas linhas acima de
+   "tabela de X existe".
+3. **Silenciar a saída de um comando seria inócuo** — esconde prompts
+   interativos e trava o script indefinidamente.
+4. **Nome de datafile relativo seria equivalente a absoluto** — não é; o
+   arquivo vai para a camada gravável da imagem e o banco morre na primeira
+   recriação de container (decisão 18).
 
-1. **Falso negativo por corrida.** O `healthy` do Docker garante que o servidor
-   aceita conexão, não que terminou de carregar os metadados. Consultas nessa
-   janela voltavam vazias, e o relatório chegou a imprimir "banco projudi_logs
-   NÃO existe" duas linhas acima de "projudi_logs.log_raw existe".
-2. **Travamento por prompt invisível.** As chamadas ao cliente eram silenciadas
-   com `>/dev/null 2>&1`; quando o cliente pediu entrada, o prompt foi
-   redirecionado junto e o script ficou parado indefinidamente. Corrigido com
-   `</dev/null` e teto de tempo em toda chamada.
+A quarta é a mais instrutiva: sobreviveu à revisão estática **e** a uma execução
+bem-sucedida de 30 itens, porque só se manifesta num evento de ciclo de vida —
+recriação de container — que nenhum teste anterior havia exercitado.
 
-Os dois são a justificativa empírica para não tratar verificação estática como
-substituto de execução.
+### O que continua sem execução
 
-### O que ainda depende do ambiente de referência
-
-| Item | Como confirmar |
+| Item | Escopo |
 |---|---|
-| `ENABLE_ARCHIVELOG` surte efeito na imagem `faststart` | item `f` do `make validate` |
-| Init do Oracle: usuário `PROJUDI`, 3 tabelas, seed, `c##dbzuser`, supplemental logging | itens `b` e `f` |
-| Scripts de `initdb.d` do Oracle executam com o bit de execução vindo do checkout | log do container: `make logs s=oracle` |
-| Kafka Connect no ar e plugin Oracle do Debezium listado | item `d` do `make validate` |
-| Compatibilidade cp-kafka 8.0.6 × Debezium 3.6 | item `d` do `make validate` |
+| `scripts/enable-archivelog.sh` (`make archivelog`) | Nunca rodou com sucesso: o caminho validado foi o do init, num ambiente novo. Convenência para ambientes antigos; sem uso previsto agora. |
+| `scripts/register-connector.sh` | Primeira tarefa da Frente C. |
+| Pipeline CDC fim a fim (Oracle → Kafka → ClickHouse) | Frente C. Não faz parte do critério de aceite da Frente A. |
 
 O caminho fim a fim do CDC (Oracle → Kafka → ClickHouse) é escopo da Frente C e
 **não** faz parte do critério de aceite desta sessão.

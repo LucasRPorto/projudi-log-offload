@@ -395,12 +395,16 @@ O que a Frente A garante para elas:
 
 ### Estado da validação
 
-A Frente A foi construída numa máquina sem Docker disponível, então a
-verificação feita até aqui é **estática**: sintaxe dos scripts, YAML e XML bem
-formados, consistência de nomes e ordem das colunas entre o Oracle, a tabela
-destino e a MATERIALIZED VIEW, e existência de todas as tags de imagem e
-artefatos Maven referenciados.
+**Frente A homologada.** `make validate` num ambiente criado do zero:
 
-**A primeira execução real ainda não aconteceu.** O que ela precisa confirmar
-está listado em [`docs/decisoes.md`](docs/decisoes.md), seção 16. O critério é
-`make validate` terminar com `0 falharam`.
+```
+32 passaram   0 falharam   0 avisos
+```
+
+Cobre ClickHouse (6 DDLs, MATERIALIZED VIEW, usuário de aplicação com escrita e
+leitura), Oracle (schema `PROJUDI`, 43 colunas da `PROC`, seed, ARCHIVELOG,
+supplemental logging, datafiles no volume), Kafka, e Kafka Connect com o plugin
+Oracle do Debezium e o driver `ojdbc11` no classpath.
+
+O detalhamento, e o registro dos quatro defeitos que só a execução real
+revelou, estão em [`docs/decisoes.md`](docs/decisoes.md), seção 16.
