@@ -31,6 +31,7 @@ set -a; . ./.env; set +a
 
 CH_APP_USER="${CH_APP_USER:-projudi_app}"
 CH_APP_PASSWORD="${CH_APP_PASSWORD:-projudi_app_dev}"
+ORACLE_SYS_PASSWORD="${ORACLE_SYS_PASSWORD:-oracle_dev}"
 ORACLE_PROJUDI_PASSWORD="${ORACLE_PROJUDI_PASSWORD:-projudi_dev}"
 ORACLE_DBZ_USER="${ORACLE_DBZ_USER:-c##dbzuser}"
 
