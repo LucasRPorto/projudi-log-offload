@@ -83,9 +83,13 @@ services:
     environment:
       ORACLE_PASSWORD: ${ORACLE_SYS_PASSWORD:-oracle_dev}
       ORACLE_CHARACTERSET: AL32UTF8
-      # Pré-requisitos do Debezium Oracle Connector (LogMiner)
-      ENABLE_ARCHIVELOG: "true"
-      ENABLE_FORCE_LOGGING: "true"
+      # ARCHIVELOG e FORCE LOGGING (pré-requisitos do LogMiner) NÃO são
+      # configuráveis por variável de ambiente nesta imagem: ENABLE_ARCHIVELOG
+      # não existe no entrypoint do gvenzl/oracle-free. Confirmado em execução
+      # real — o banco subia em NOARCHIVELOG com a variável definida.
+      # A troca é feita explicitamente em oracle/init/sql/05_enable_archivelog.sql,
+      # e `make archivelog` a aplica em ambiente já de pé.
+      # Ver docs/decisoes.md, seção 5.
       # Consumidos pelos scripts de init (infra/oracle/init/01_init_projudi.sh)
       ORACLE_PROJUDI_PASSWORD: ${ORACLE_PROJUDI_PASSWORD:-projudi_dev}
       ORACLE_DBZ_USER: ${ORACLE_DBZ_USER:-c##dbzuser}

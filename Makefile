@@ -16,7 +16,7 @@ DC           := docker compose --env-file .env -f $(COMPOSE_FILE)
 s ?=
 
 .DEFAULT_GOAL := help
-.PHONY: help setup up up-lite down restart reset logs status ps validate validate-lite ch sql connector connector-status build
+.PHONY: help setup up up-lite down restart reset logs status ps validate validate-lite archivelog ch sql connector connector-status build
 
 help: ## Lista os alvos disponíveis
 	@echo ""
@@ -93,6 +93,9 @@ validate: ## Roda a bateria de validação do ambiente
 
 validate-lite: ## Valida só o ClickHouse (para quem subiu com up-lite)
 	@./scripts/validate.sh --lite
+
+archivelog: ## Coloca o Oracle em ARCHIVELOG (pré-requisito do CDC)
+	@./scripts/enable-archivelog.sh
 
 build: ## Reconstrói a imagem do Kafka Connect (com o driver ojdbc)
 	@$(DC) build --no-cache connect

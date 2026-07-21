@@ -59,34 +59,61 @@ EOF
 
 # -----------------------------------------------------------------------------
 # 0) Pré-condição do Debezium: o banco precisa estar em ARCHIVELOG.
-#    A imagem é instruída a habilitar isso via ENABLE_ARCHIVELOG=true (compose).
-#    Se por algum motivo não pegou, avisamos ALTO e seguimos — o schema PROJUDI
-#    e a Solução 1 funcionam sem archivelog; só o CDC (Solução 2) não sobe.
+#
+#    A imagem gvenzl/oracle-free sobe em NOARCHIVELOG e NÃO interpreta a
+#    variável ENABLE_ARCHIVELOG — isso foi confirmado em execução real (ver
+#    docs/decisoes.md, seção 5). A troca é feita aqui, explicitamente.
+#
+#    Se ainda assim falhar, avisamos ALTO e seguimos: o schema PROJUDI e a
+#    Solução 1 funcionam sem archivelog; só o CDC (Solução 2) fica bloqueado.
 # -----------------------------------------------------------------------------
 log "verificando log_mode do banco"
 LOG_MODE="$(query_scalar "${CDB}" "select log_mode from v\$database;")"
 
 if [ "${LOG_MODE}" = "ARCHIVELOG" ]; then
-    log "log_mode = ARCHIVELOG (ok, LogMiner disponível)"
+    log "log_mode = ARCHIVELOG (ok, LogMiner disponivel)"
 else
-    cat >&2 <<EOW
+    log "log_mode = ${LOG_MODE}; habilitando ARCHIVELOG (o banco sera reiniciado)"
+
+    # A variavel de ambiente ENABLE_ARCHIVELOG NAO e interpretada por esta
+    # imagem -- verificado no codigo do entrypoint e confirmado em execucao
+    # real. A unica forma e a sequencia explicita de shutdown/mount/alter/open.
+    # Precisa de conexao local: STARTUP nao funciona pelo listener.
+    if sqlplus -S "/ as sysdba" "@${SQL_DIR}/05_enable_archivelog.sql"; then
+
+        # Depois do restart o listener leva alguns segundos para registrar de
+        # novo o servico do PDB. Sem esperar, o proximo script falharia com
+        # ORA-12514 e pareceria erro de configuracao.
+        log "aguardando o listener registrar FREEPDB1"
+        for _ in $(seq 1 30); do
+            if sqlplus -S -L "sys/${SYS_PWD}@${PDB} as sysdba" >/dev/null 2>&1 <<'EOSQL'
+select 1 from dual;
+exit;
+EOSQL
+            then break; fi
+            sleep 3
+        done
+
+        LOG_MODE="$(query_scalar "${CDB}" "select log_mode from v\$database;")"
+        log "log_mode agora = ${LOG_MODE}"
+    else
+        log "ERRO: nao foi possivel habilitar ARCHIVELOG"
+    fi
+fi
+
+if [ "${LOG_MODE}" != "ARCHIVELOG" ]; then
+    cat >&2 <<'EOW'
 
   ###########################################################################
-  #  ATENÇÃO: o banco está em log_mode = '${LOG_MODE}', não ARCHIVELOG.     #
+  #  ATENCAO: o banco NAO esta em ARCHIVELOG.                               #
   #                                                                         #
   #  O Debezium Oracle Connector usa LogMiner e EXIGE ARCHIVELOG. A         #
-  #  Solução 2 (CDC) não vai funcionar até que isso seja corrigido.         #
-  #  A Solução 1 (offload de log) não é afetada.                            #
+  #  Solucao 2 (CDC) nao vai funcionar ate que isso seja corrigido.         #
+  #  A Solucao 1 (offload de log) nao e afetada.                            #
   #                                                                         #
-  #  Correção manual (dentro do container projudi-oracle):                  #
-  #    sqlplus / as sysdba                                                  #
-  #    SHUTDOWN IMMEDIATE;                                                  #
-  #    STARTUP MOUNT;                                                       #
-  #    ALTER DATABASE ARCHIVELOG;                                           #
-  #    ALTER DATABASE OPEN;                                                 #
-  #    ALTER PLUGGABLE DATABASE ALL OPEN;                                   #
+  #  Com o ambiente de pe, tente:   make archivelog                         #
   #                                                                         #
-  #  Ver docs/decisoes.md, seção "ARCHIVELOG".                              #
+  #  Ver docs/decisoes.md, secao 5.                                         #
   ###########################################################################
 
 EOW

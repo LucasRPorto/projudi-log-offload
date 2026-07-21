@@ -188,6 +188,7 @@ make status            # estado e saúde dos containers
 make logs s=oracle     # segue o log de um serviço
 make validate          # bateria de validação
 make validate-lite     # valida só o ClickHouse (para quem subiu com up-lite)
+make archivelog        # coloca o Oracle em ARCHIVELOG (pré-requisito do CDC)
 make ch                # clickhouse-client interativo
 make sql               # sqlplus interativo
 make connector         # registra o conector Debezium
@@ -333,8 +334,19 @@ docker compose --env-file .env -f infra/docker-compose.yml \
 ### Oracle não está em ARCHIVELOG
 
 `make validate` marca isso como ⚠️ no item `f`. A Solução 1 continua
-funcionando; só o CDC fica bloqueado. O procedimento de correção manual está em
-[`docs/decisoes.md`](docs/decisoes.md), seção 5.
+funcionando; só o CDC (Solução 2) fica bloqueado, porque o LogMiner exige
+ARCHIVELOG.
+
+Corrija sem destruir o ambiente:
+
+```bash
+make archivelog      # reinicia só a instância Oracle; os volumes ficam intactos
+make validate        # o item 'f' deve passar sem avisos
+```
+
+Ambientes novos já saem em ARCHIVELOG — o init faz isso automaticamente. Este
+comando existe para ambientes que subiram antes da correção. Detalhes e o
+porquê da abordagem em [`docs/decisoes.md`](docs/decisoes.md), seção 5.
 
 ### O conector registra mas não produz eventos
 

@@ -86,31 +86,56 @@ explícita e o README traz o procedimento manual.
 O Debezium Oracle Connector usa LogMiner, que **exige** o banco em modo
 ARCHIVELOG. A imagem `gvenzl/oracle-free` sobe em NOARCHIVELOG por padrão.
 
-**Escolhido:** as variáveis `ENABLE_ARCHIVELOG=true` e
-`ENABLE_FORCE_LOGGING=true` no compose, que a própria imagem interpreta e aplica
-antes de liberar o banco.
+> **Esta decisão foi corrigida depois da primeira execução real.** A versão
+> original dizia para usar as variáveis de ambiente `ENABLE_ARCHIVELOG=true` e
+> `ENABLE_FORCE_LOGGING=true` no compose. **Isso não funciona:** essas variáveis
+> não existem no entrypoint do `gvenzl/oracle-free`. O `make validate` de
+> 2026-07-21 acusou `log_mode = NOARCHIVELOG` com as variáveis definidas, e a
+> inspeção do código da imagem confirmou que elas nunca são lidas.
+>
+> Fica registrado como erro em vez de ser apagado: é exatamente o tipo de
+> suposição que só cai em execução, e o histórico da correção vale mais que uma
+> decisão que finge ter nascido certa.
 
-Alternativa descartada: fazer `SHUTDOWN IMMEDIATE` / `STARTUP MOUNT` /
-`ALTER DATABASE ARCHIVELOG` de dentro de um script de init. Funciona, mas
-derruba o banco no meio do entrypoint da imagem, o que interfere no healthcheck
-e deixa a inicialização frágil.
-
-**Não falha em silêncio:** `infra/oracle/init/01_init_projudi.sh` consulta
-`v$database.log_mode` logo no início. Se não estiver em ARCHIVELOG, imprime um
-bloco de aviso no log do container com o procedimento manual, e segue — a
-Solução 1 não depende de archivelog, só a Solução 2. `make validate` repete a
-verificação (item `f`) e marca como aviso.
-
-Procedimento manual, se necessário:
+**Escolhido:** a sequência explícita, em
+`infra/oracle/init/sql/05_enable_archivelog.sql`:
 
 ```sql
--- dentro do container projudi-oracle, como sysdba
 SHUTDOWN IMMEDIATE;
 STARTUP MOUNT;
 ALTER DATABASE ARCHIVELOG;
 ALTER DATABASE OPEN;
+ALTER DATABASE FORCE LOGGING;
 ALTER PLUGGABLE DATABASE ALL OPEN;
+ALTER PLUGGABLE DATABASE ALL SAVE STATE;
 ```
+
+Três detalhes que não são óbvios:
+
+- **Precisa de conexão local** (`sqlplus / as sysdba` dentro do container).
+  `STARTUP` não funciona através do listener.
+- **A decisão de executar fica no shell**, não no SQL: `SHUTDOWN` e `STARTUP`
+  são comandos do SQL*Plus e não podem ser condicionados dentro de um bloco
+  PL/SQL. O orquestrador consulta `v$database.log_mode` e só chama o script se
+  precisar.
+- **Depois do restart o listener leva alguns segundos** para registrar de novo
+  o serviço do PDB. Sem esperar, o script seguinte falharia com ORA-12514 e o
+  sintoma não apontaria para a causa. Há um laço de espera nos dois pontos que
+  executam a sequência.
+
+Aplicado em dois lugares, com o mesmo `.sql`:
+
+| Onde | Quando |
+|---|---|
+| `infra/oracle/init/01_init_projudi.sh` | ambientes novos, no primeiro start |
+| `scripts/enable-archivelog.sh` (`make archivelog`) | ambiente já de pé, sem `make reset` |
+
+O segundo existe para não obrigar a destruir os volumes e esperar minutos só
+para trocar o `log_mode`.
+
+**Não falha em silêncio:** se a sequência não funcionar, o init imprime um bloco
+de aviso no log do container, e o item `f` do `make validate` marca o problema.
+A Solução 1 não depende de archivelog — só a Solução 2 fica bloqueada.
 
 **Consequência operacional:** com ARCHIVELOG ligado, o Oracle acumula archived
 logs até encher a FRA. Num ambiente de laboratório de vida curta isso não
