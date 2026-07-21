@@ -187,6 +187,7 @@ make reset             # APAGA os volumes e recria do zero (pede confirmação)
 make status            # estado e saúde dos containers
 make logs s=oracle     # segue o log de um serviço
 make validate          # bateria de validação
+make validate-lite     # valida só o ClickHouse (para quem subiu com up-lite)
 make ch                # clickhouse-client interativo
 make sql               # sqlplus interativo
 make connector         # registra o conector Debezium
@@ -277,10 +278,17 @@ cerca de 3 GB:
 
 ```bash
 make up-lite
+make validate-lite
 ```
 
-Ele serve para iterar o `log-writer` (Frente B). **Não serve para o benchmark:**
-sem o Oracle local não existe grupo de controle — ver
+Isso não é uma validação "de segunda": `up-lite` aplica os **seis DDLs** do
+ClickHouse no primeiro start, incluindo a `MATERIALIZED VIEW proc_cdc_mv` com as
+expressões `JSONExtract`, e cria o usuário de aplicação. Se o ClickHouse subir
+saudável e o `validate-lite` passar, a parte de maior risco do ambiente está
+confirmada — falta só o que depende do Oracle e do Kafka Connect.
+
+O modo reduzido serve para iterar o `log-writer` (Frente B). **Não serve para o
+benchmark:** sem o Oracle local não existe grupo de controle — ver
 [`docs/ambientes.md`](docs/ambientes.md), seção 3.
 
 ### `ClassNotFoundException: oracle.jdbc.OracleDriver` ao registrar o conector

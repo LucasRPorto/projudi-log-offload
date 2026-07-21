@@ -13,10 +13,28 @@
 # Extras (não bloqueiam o resultado, mas são pré-requisito do CDC):
 #   f) Oracle em ARCHIVELOG, supplemental logging ligado, usuário do Debezium ok
 #
+# Uso:
+#   ./scripts/validate.sh           valida o ambiente completo (make up)
+#   ./scripts/validate.sh --lite    valida só o ClickHouse (itens a e e),
+#                                   para máquinas que só rodam `make up-lite`
+#
+# O modo --lite não é uma validação parcial "de segunda": ele exercita
+# justamente a parte de maior risco do ambiente — a aplicação dos 6 DDLs no
+# primeiro start, incluindo a MATERIALIZED VIEW com as expressões JSONExtract, e
+# a criação do usuário de aplicação. Se o ClickHouse subir saudável no modo
+# lite, esses DDLs estão sintaticamente corretos.
+#
 # Sai com 0 se tudo passou, 1 se algum item obrigatório falhou.
 # =============================================================================
 
 set -uo pipefail
+
+MODO_LITE=0
+case "${1:-}" in
+    --lite) MODO_LITE=1 ;;
+    "")     ;;
+    *)      echo "Uso: $0 [--lite]" >&2; exit 2 ;;
+esac
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${REPO_ROOT}"
@@ -96,7 +114,14 @@ wait_healthy() {
     return 1
 }
 
-for c in projudi-clickhouse projudi-oracle projudi-kafka projudi-connect; do
+if [ "${MODO_LITE}" -eq 1 ]; then
+    CONTAINERS="projudi-clickhouse projudi-kafka"
+    printf '     %smodo --lite: só ClickHouse e Kafka%s\n' "${C_DIM}" "${C_RESET}"
+else
+    CONTAINERS="projudi-clickhouse projudi-oracle projudi-kafka projudi-connect"
+fi
+
+for c in ${CONTAINERS}; do
     printf '     aguardando %s ...\r' "${c}"
     if wait_healthy "${c}" 300; then
         ok "${c} saudável"
@@ -161,6 +186,12 @@ else
 fi
 
 # -----------------------------------------------------------------------------
+if [ "${MODO_LITE}" -eq 1 ]; then
+    title "b, c, d, f  — ignorados no modo --lite"
+    info "Oracle, Kafka Connect e os pré-requisitos de CDC não sobem em modo reduzido."
+    info "Rode ./scripts/validate.sh sem --lite no ambiente de referência."
+else
+
 title "b  Oracle — schema PROJUDI e dados de exemplo"
 
 if [ "$(ora 'select 1 from dual;' | trim)" = "1" ]; then
@@ -230,6 +261,8 @@ else
     bad "ojdbc11.jar ausente em /kafka/libs — o conector Oracle vai falhar ao registrar"
 fi
 
+fi   # fim do bloco ignorado no modo --lite (itens b, c, d)
+
 # -----------------------------------------------------------------------------
 title "e  ClickHouse — escrita e leitura pelo usuário de aplicação"
 
@@ -267,6 +300,8 @@ else
 fi
 
 # -----------------------------------------------------------------------------
+if [ "${MODO_LITE}" -eq 0 ]; then
+
 title "f  Pré-requisitos do CDC (Solução 2)"
 
 LOG_MODE="$(ora_sys 'select log_mode from v$database;' | trim)"
@@ -297,6 +332,8 @@ else
     warn "usuário do Debezium '${ORACLE_DBZ_USER}' não encontrado"
 fi
 
+fi   # fim do bloco ignorado no modo --lite (item f)
+
 # -----------------------------------------------------------------------------
 printf '\n%s────────────────────────────────────────────────────────%s\n' "${C_BOLD}" "${C_RESET}"
 printf '  %s%d passaram%s   %s%d falharam%s   %s%d avisos%s\n' \
@@ -311,6 +348,22 @@ if [ "${FAIL}" -gt 0 ]; then
     exit 1
 fi
 
+if [ "${MODO_LITE}" -eq 1 ]; then
+cat <<EOF
+ClickHouse validado.
+
+Os 6 DDLs foram aplicados com sucesso no primeiro start — incluindo a
+MATERIALIZED VIEW proc_cdc_mv — e o usuário de aplicação aceita escrita e
+leitura. Essa era a parte de maior risco do ambiente.
+
+  Frente B (log-writer):  jdbc:ch://localhost:${CLICKHOUSE_HTTP_PORT:-8123}/projudi_logs
+                          usuário ${CH_APP_USER}
+
+O que este modo NÃO validou: Oracle, Kafka Connect e o pipeline de CDC.
+Rode ./scripts/validate.sh (sem --lite) no ambiente de referência para fechar.
+
+EOF
+else
 cat <<EOF
 Ambiente pronto.
 
@@ -319,4 +372,5 @@ Ambiente pronto.
   Frente C (CDC):         ./scripts/register-connector.sh   para registrar o conector Debezium
 
 EOF
+fi
 exit 0
