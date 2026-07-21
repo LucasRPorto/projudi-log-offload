@@ -37,10 +37,15 @@
   // máquina de 2 núcleos / 8 GB do Codespaces NÃO é suficiente: o Oracle sobe
   // e é morto pelo OOM killer. Esta declaração faz o Codespaces oferecer
   // apenas tipos compatíveis.
+  //
+  // ATENÇÃO ao mexer no `storage`: o tipo de 4 núcleos oferece 32 GB de disco.
+  // Pedir mais que isso empurra a seleção para o tipo de 8 núcleos, que
+  // consome a cota do Codespaces DUAS VEZES mais rápido sem nenhum ganho para
+  // este ambiente. 32 GB acomodam as imagens (~3 GB) e os volumes com folga.
   "hostRequirements": {
     "cpus": 4,
     "memory": "16gb",
-    "storage": "64gb"
+    "storage": "32gb"
   },
 
   "forwardPorts": [8123, 9000, 1521, 29092, 8083, 8080],
