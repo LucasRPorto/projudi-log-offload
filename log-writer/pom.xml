@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  log-writer — Solução 1 (offload de log)
+
+  Esqueleto Maven vazio, preparado para a Frente B. Nenhuma classe foi
+  implementada de propósito: este módulo só define as dependências e o alvo de
+  compilação, para que a implementação comece sem discussão de build.
+
+  Java 8: é o que o Projudi usa hoje (<java.version>8</java.version> no pom do
+  repositório ../projudi). O artefato precisa rodar dentro daquela aplicação,
+  então não faz sentido compilar para uma versão mais nova.
+
+  clickhouse-jdbc 0.7.2: última linha do driver que ainda suporta Java 8 — as
+  versões 0.8.x em diante exigem JDK mais recente. Classificador "all" = uber
+  jar com o cliente HTTP embutido e sombreado, o que evita conflito com as
+  dependências já presentes no classpath do Projudi (um risco real num sistema
+  legado com muitas bibliotecas antigas). Ver docs/decisoes.md.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>br.jus.tjgo.projudi</groupId>
+    <artifactId>log-writer</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <packaging>jar</packaging>
+
+    <name>projudi-log-writer</name>
+    <description>
+        Gravação dos logs de auditoria do Projudi diretamente no ClickHouse,
+        preservando o formato produzido pela classe LogPs.
+    </description>
+
+    <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+
+        <java.version>8</java.version>
+        <maven.compiler.source>${java.version}</maven.compiler.source>
+        <maven.compiler.target>${java.version}</maven.compiler.target>
+
+        <clickhouse-jdbc.version>0.7.2</clickhouse-jdbc.version>
+        <junit.version>5.11.4</junit.version>
+        <surefire.version>3.2.5</surefire.version>
+    </properties>
+
+    <dependencies>
+
+        <dependency>
+            <groupId>com.clickhouse</groupId>
+            <artifactId>clickhouse-jdbc</artifactId>
+            <version>${clickhouse-jdbc.version}</version>
+            <classifier>all</classifier>
+            <!--
+              O artefato "all" já traz tudo sombreado. Sem esta exclusão o Maven
+              resolveria de novo as dependências transitivas não sombreadas,
+              derrotando o propósito do uber jar.
+            -->
+            <exclusions>
+                <exclusion>
+                    <groupId>*</groupId>
+                    <artifactId>*</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${junit.version}</version>
+            <scope>test</scope>
+        </dependency>
+
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.13.0</version>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>${surefire.version}</version>
+            </plugin>
+        </plugins>
+    </build>
+
+</project>
