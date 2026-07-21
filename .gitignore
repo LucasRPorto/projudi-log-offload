@@ -1,0 +1,37 @@
+# ---- Segredos / configuração local ----
+.env
+*.local
+*.pem
+*.key
+
+# ---- Dados de volumes e artefatos gerados em runtime ----
+infra/**/data/
+infra/debezium/lib/*.jar
+volumes/
+*.log
+
+# ---- Java / Maven (log-writer) ----
+target/
+*.jar
+*.war
+*.class
+dependency-reduced-pom.xml
+.mvn/wrapper/maven-wrapper.jar
+
+# ---- IDEs ----
+.idea/
+*.iml
+.vscode/
+.settings/
+.project
+.classpath
+.factorypath
+
+# ---- SO ----
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# ---- Evidências de validação geradas localmente ----
+validacao/evidencias/*
+!validacao/evidencias/.gitkeep

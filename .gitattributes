@@ -1,0 +1,21 @@
+# Todos os arquivos de texto usam LF, inclusive num checkout Windows.
+#
+# Isto não é preferência de estilo: os .sh e os .sql deste repositório são
+# montados dentro de containers Linux. Um arquivo com CRLF faz o shell do
+# container falhar com erros do tipo "bad interpreter: /usr/bin/env bash^M" ou
+# o SQL*Plus rejeitar o comando, e o sintoma não aponta para a causa.
+* text=auto eol=lf
+
+*.sh        text eol=lf
+*.sql       text eol=lf
+*.xml       text eol=lf
+*.json      text eol=lf
+*.yml       text eol=lf
+*.md        text eol=lf
+Makefile    text eol=lf
+Dockerfile  text eol=lf
+.env.example text eol=lf
+
+*.jar       binary
+*.dbf       binary
+*.png       binary
