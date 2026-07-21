@@ -295,6 +295,18 @@ else
     bad "PROJUDI.PROC tem ${N_COLS_PROC} colunas, esperado 43"
 fi
 
+# Um datafile fora do volume torna o banco descartável sem aviso: funciona até
+# o container ser recriado e depois não abre mais (ORA-01157). Ver decisão 18.
+FORA_DO_VOLUME="$(ora_sys \
+    "select count(*) from cdb_data_files where file_name not like '/opt/oracle/oradata/%';" | trim)"
+if [ "${FORA_DO_VOLUME}" = "0" ]; then
+    ok "todos os datafiles estão dentro do volume oracle-data"
+else
+    bad "${FORA_DO_VOLUME} datafile(s) fora de /opt/oracle/oradata"
+    info "o banco não sobrevive a um 'docker compose down' — veja decisoes.md, seção 18"
+    info "$(ora_sys "select file_name from cdb_data_files where file_name not like '/opt/oracle/oradata/%' and rownum <= 3;")"
+fi
+
 # -----------------------------------------------------------------------------
 title "c  Kafka — broker e tópicos"
 

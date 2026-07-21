@@ -67,11 +67,35 @@ if [ "${ATUAL}" = "ARCHIVELOG" ]; then
     exit 0
 fi
 
-if [ -z "${ATUAL}" ]; then
-    bad "não foi possível ler v\$database.log_mode. O Oracle terminou de subir?"
-    echo "     tente: make logs s=oracle" >&2
-    exit 1
-fi
+# A consulta pode devolver um texto de erro em vez de um log_mode. Sem esta
+# checagem, o script tratava "ORA-01507: database not mounted" como se fosse o
+# modo atual e seguia adiante tentando reiniciar um banco que já estava
+# quebrado — mascarando a causa real.
+case "${ATUAL}" in
+    NOARCHIVELOG) ;;                      # único caso que este script resolve
+    "")
+        bad "não foi possível ler v\$database.log_mode"
+        echo "     o Oracle terminou de subir? veja: make logs s=oracle" >&2
+        exit 1
+        ;;
+    *ORA-*)
+        bad "o banco não está saudável — a consulta devolveu um erro:"
+        printf '     %s\n' "${ATUAL}" >&2
+        echo >&2
+        echo "     Se o erro for ORA-01157 (cannot identify/lock data file), o banco" >&2
+        echo "     foi criado por uma versão do init com datafile fora do volume e" >&2
+        echo "     não tem recuperação prática. Recrie o ambiente:" >&2
+        echo >&2
+        echo "         make reset && make up && make validate" >&2
+        echo >&2
+        echo "     Ver docs/decisoes.md, seção 18." >&2
+        exit 1
+        ;;
+    *)
+        bad "log_mode inesperado: '${ATUAL}'"
+        exit 1
+        ;;
+esac
 
 warn "log_mode atual: ${ATUAL}"
 echo "     O banco será REINICIADO para trocar o modo. Nenhum dado é perdido:"

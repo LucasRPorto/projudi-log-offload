@@ -21,9 +21,32 @@ DEFINE dbz_pwd  = &2
 
 -- -----------------------------------------------------------------------------
 -- Tablespace do LogMiner no root (a contraparte no PDB foi criada no passo 10)
+--
+-- O caminho do datafile é derivado em tempo de execução, NUNCA relativo — um
+-- nome relativo cai em $ORACLE_HOME/dbs, fora do volume, e o banco deixa de
+-- abrir assim que o container for recriado. Ver o cabeçalho de
+-- 10_pdb_tablespace.sql e docs/decisoes.md, seção 18.
 -- -----------------------------------------------------------------------------
+SET TERMOUT OFF
+COLUMN dbf_dir NEW_VALUE dbf_dir NOPRINT
+SELECT SUBSTR(file_name, 1, INSTR(file_name, '/', -1)) AS dbf_dir
+FROM   dba_data_files
+WHERE  tablespace_name = 'SYSTEM'
+  AND  ROWNUM = 1;
+SET TERMOUT ON
+
+PROMPT Diretorio de datafiles do CDB$ROOT: &dbf_dir
+
+BEGIN
+    IF '&dbf_dir' NOT LIKE '/opt/oracle/oradata/%' THEN
+        RAISE_APPLICATION_ERROR(-20010,
+            'Datafile fora do volume oracle-data: &dbf_dir');
+    END IF;
+END;
+/
+
 CREATE TABLESPACE logminer_tbs
-    DATAFILE 'logminer_tbs_root.dbf'
+    DATAFILE '&dbf_dir.logminer_tbs_root.dbf'
     SIZE 25M REUSE AUTOEXTEND ON MAXSIZE UNLIMITED;
 
 -- -----------------------------------------------------------------------------

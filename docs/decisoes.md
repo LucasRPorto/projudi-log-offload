@@ -463,3 +463,67 @@ máquinas diferentes.
 A restrição que sobra está em `docs/ambientes.md`, seção 5: **os números finais
 de benchmark precisam sair de um único ambiente de referência.** Ambientes
 diferentes produzem medições que não se combinam.
+
+---
+
+## 18. Datafiles precisam de caminho absoluto dentro do volume
+
+Erro de construção descoberto em 2026-07-21, com o ambiente já validado e em
+uso. Custou a perda total de um banco de desenvolvimento.
+
+**O que estava errado.** As três tablespaces criadas pelo init usavam nome de
+arquivo relativo:
+
+```sql
+CREATE TABLESPACE logminer_tbs DATAFILE 'logminer_tbs_root.dbf' SIZE 25M ...;
+```
+
+O Oracle resolve nome relativo a partir de `$ORACLE_HOME/dbs` — que fica na
+**camada gravável da imagem**, não no volume nomeado `oracle-data` montado em
+`/opt/oracle/oradata`.
+
+**Por que passou despercebido.** Um `docker compose restart` preserva a camada
+gravável, e tudo funciona. O `make validate` completo passou com 30 itens. O
+problema só aparece quando o container é **recriado** — `docker compose down`
+seguido de `up`, troca de versão de imagem, ou reinício do Docker Desktop. Aí a
+camada gravável é descartada, os datafiles somem, e o banco entra em loop de
+restart:
+
+```
+ORA-01157: cannot identify/lock data file 27
+ORA-01110: data file 27: '.../dbhomeFree/dbs/logminer_tbs_root.dbf'
+```
+
+Sem recuperação prática: a tablespace faz parte do dicionário, o arquivo não
+existe mais, e o banco não abre para se consertar.
+
+**Correção.** O diretório é derivado em tempo de execução, do datafile da
+SYSTEM — que por construção está dentro do volume:
+
+```sql
+COLUMN dbf_dir NEW_VALUE dbf_dir NOPRINT
+SELECT SUBSTR(file_name, 1, INSTR(file_name, '/', -1)) AS dbf_dir
+FROM   dba_data_files WHERE tablespace_name = 'SYSTEM' AND ROWNUM = 1;
+
+CREATE TABLESPACE logminer_tbs DATAFILE '&dbf_dir.logminer_tbs.dbf' ...;
+```
+
+Derivado, e não escrito à mão, porque o layout muda entre versões da imagem — o
+caminho já mudou de `dbhomeFree/23ai` para `dbhomeFree/26ai` durante este
+próprio trabalho. Antes do `CREATE`, um bloco PL/SQL aborta o init se o
+diretório não estiver sob `/opt/oracle/oradata` — melhor falhar na criação do
+que entregar um banco que morre no primeiro `down`.
+
+**Detecção.** O `make validate` passa a conferir:
+
+```sql
+SELECT count(*) FROM cdb_data_files
+ WHERE file_name NOT LIKE '/opt/oracle/oradata/%';   -- tem que ser 0
+```
+
+**Lição para o relatório.** Esta é a falha mais instrutiva do trabalho: passou
+por revisão estática completa, passou por uma execução bem-sucedida de 30 itens,
+e só apareceu num evento de ciclo de vida — recriação de container — que nenhum
+teste anterior havia exercitado. Persistência em container não é sobre o que
+funciona enquanto o container está de pé; é sobre o que sobrevive quando ele
+deixa de existir.
