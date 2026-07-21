@@ -1,0 +1,208 @@
+# =============================================================================
+# projudi-log-offload — ambiente local do MVP
+#
+# Invocar SEMPRE a partir da raiz do repositório:
+#   docker compose --env-file .env -f infra/docker-compose.yml <comando>
+# (o Makefile já faz isso; ver `make help`)
+#
+# Serviços:
+#   clickhouse  8123/9000  destino das duas soluções
+#   oracle      1521       origem (schema PROJUDI + CDC via LogMiner)
+#   kafka       29092      broker KRaft single-node (interno: kafka:9092)
+#   connect     8083       Kafka Connect + conectores Debezium
+#   kafka-ui    8080       inspeção visual de tópicos
+# =============================================================================
+
+name: ${COMPOSE_PROJECT_NAME:-projudi-log-offload}
+
+networks:
+  projudi-net:
+    driver: bridge
+
+volumes:
+  clickhouse-data:
+  clickhouse-logs:
+  oracle-data:
+  kafka-data:
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # ClickHouse — destino da Solução 1 (offload de log) e da Solução 2 (CDC)
+  # ---------------------------------------------------------------------------
+  clickhouse:
+    image: clickhouse/clickhouse-server:${CLICKHOUSE_VERSION:-25.8}
+    container_name: projudi-clickhouse
+    hostname: clickhouse
+    restart: unless-stopped
+    networks: [projudi-net]
+    ports:
+      - "${CLICKHOUSE_HTTP_PORT:-8123}:8123"
+      - "${CLICKHOUSE_NATIVE_PORT:-9000}:9000"
+    environment:
+      # Nomes propositalmente NÃO são CLICKHOUSE_USER/CLICKHOUSE_PASSWORD: essas
+      # variáveis fazem o entrypoint oficial REMOVER o usuário `default`. Aqui o
+      # usuário de aplicação é criado via SQL em ddl/90_app_user.sh e o `default`
+      # é preservado para uso interativo (`make ch`).
+      CH_APP_USER: ${CH_APP_USER:-projudi_app}
+      CH_APP_PASSWORD: ${CH_APP_PASSWORD:-projudi_app_dev}
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+      - clickhouse-logs:/var/log/clickhouse-server
+      - ./clickhouse/ddl:/docker-entrypoint-initdb.d:ro
+      - ./clickhouse/config/config.d:/etc/clickhouse-server/config.d:ro
+      - ./clickhouse/config/users.d:/etc/clickhouse-server/users.d:ro
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    cap_add:
+      - SYS_NICE
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  # ---------------------------------------------------------------------------
+  # Oracle — origem. CDB=FREE, PDB=FREEPDB1, schema PROJUDI dentro do PDB.
+  # ---------------------------------------------------------------------------
+  oracle:
+    image: gvenzl/oracle-free:${ORACLE_VERSION:-23-slim-faststart}
+    container_name: projudi-oracle
+    hostname: oracle
+    restart: unless-stopped
+    networks: [projudi-net]
+    ports:
+      - "${ORACLE_PORT:-1521}:1521"
+    shm_size: 1gb
+    environment:
+      ORACLE_PASSWORD: ${ORACLE_SYS_PASSWORD:-oracle_dev}
+      ORACLE_CHARACTERSET: AL32UTF8
+      # Pré-requisitos do Debezium Oracle Connector (LogMiner)
+      ENABLE_ARCHIVELOG: "true"
+      ENABLE_FORCE_LOGGING: "true"
+      # Consumidos pelos scripts de init (infra/oracle/init/01_init_projudi.sh)
+      ORACLE_PROJUDI_PASSWORD: ${ORACLE_PROJUDI_PASSWORD:-projudi_dev}
+      ORACLE_DBZ_USER: ${ORACLE_DBZ_USER:-c##dbzuser}
+      ORACLE_DBZ_PASSWORD: ${ORACLE_DBZ_PASSWORD:-dbz_dev}
+      # Só têm efeito quando o banco é criado do zero (imagens não-faststart)
+      INIT_SGA_SIZE: ${ORACLE_SGA_SIZE:-1536}
+      INIT_PGA_SIZE: ${ORACLE_PGA_SIZE:-512}
+    volumes:
+      - oracle-data:/opt/oracle/oradata
+      - ./oracle/init:/container-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "healthcheck.sh"]
+      interval: 15s
+      timeout: 10s
+      retries: 40
+      start_period: 180s
+
+  # ---------------------------------------------------------------------------
+  # Kafka — KRaft (broker + controller no mesmo nó), sem ZooKeeper
+  # ---------------------------------------------------------------------------
+  kafka:
+    image: confluentinc/cp-kafka:${KAFKA_VERSION:-8.0.6}
+    container_name: projudi-kafka
+    hostname: kafka
+    restart: unless-stopped
+    networks: [projudi-net]
+    ports:
+      - "${KAFKA_EXTERNAL_PORT:-29092}:29092"
+    environment:
+      CLUSTER_ID: ${KAFKA_CLUSTER_ID:-MkU3OEVBNTcwNTJENDM2Qk}
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093,EXTERNAL://0.0.0.0:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:${KAFKA_EXTERNAL_PORT:-29092}
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_HEAP_OPTS: "-Xms512m -Xmx1g"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # Kafka Connect — imagem Debezium + driver JDBC da Oracle (ver ./debezium/Dockerfile)
+  # ---------------------------------------------------------------------------
+  connect:
+    build:
+      context: ./debezium
+      args:
+        DEBEZIUM_VERSION: ${DEBEZIUM_VERSION:-3.6.0.Final}
+        OJDBC_VERSION: ${OJDBC_VERSION:-23.8.0.25.04}
+    image: projudi/debezium-connect:${DEBEZIUM_VERSION:-3.6.0.Final}
+    container_name: projudi-connect
+    hostname: connect
+    restart: unless-stopped
+    networks: [projudi-net]
+    ports:
+      - "${CONNECT_PORT:-8083}:8083"
+    environment:
+      BOOTSTRAP_SERVERS: kafka:9092
+      GROUP_ID: ${CONNECT_GROUP_ID:-projudi-connect}
+      CONFIG_STORAGE_TOPIC: connect_configs
+      OFFSET_STORAGE_TOPIC: connect_offsets
+      STATUS_STORAGE_TOPIC: connect_statuses
+      CONFIG_STORAGE_REPLICATION_FACTOR: 1
+      OFFSET_STORAGE_REPLICATION_FACTOR: 1
+      STATUS_STORAGE_REPLICATION_FACTOR: 1
+      # Envelope Debezium em JSON puro (sem o wrapper "schema"/"payload").
+      # A MATERIALIZED VIEW no ClickHouse aceita os dois formatos, mas sem
+      # schema o payload fica ~5x menor. Ver docs/decisoes.md.
+      KEY_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      VALUE_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      CONNECT_KEY_CONVERTER_SCHEMAS_ENABLE: "false"
+      CONNECT_VALUE_CONVERTER_SCHEMAS_ENABLE: "false"
+      ENABLE_DEBEZIUM_SCRIPTING: "false"
+      KAFKA_HEAP_OPTS: "-Xms256m -Xmx1g"
+    depends_on:
+      kafka:
+        condition: service_healthy
+      oracle:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8083/connectors >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
+  # ---------------------------------------------------------------------------
+  # Kafka UI — opcional, apenas para inspeção durante o desenvolvimento
+  # ---------------------------------------------------------------------------
+  kafka-ui:
+    image: kafbat/kafka-ui:${KAFKA_UI_VERSION:-v1.5.0}
+    container_name: projudi-kafka-ui
+    hostname: kafka-ui
+    restart: unless-stopped
+    networks: [projudi-net]
+    ports:
+      - "${KAFKA_UI_PORT:-8080}:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: projudi-local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+      KAFKA_CLUSTERS_0_KAFKACONNECT_0_NAME: debezium
+      KAFKA_CLUSTERS_0_KAFKACONNECT_0_ADDRESS: http://connect:8083
+      DYNAMIC_CONFIG_ENABLED: "true"
+    depends_on:
+      kafka:
+        condition: service_healthy

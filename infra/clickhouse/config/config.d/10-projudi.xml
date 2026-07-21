@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<!--
+  Ajustes de servidor para o ambiente de MVP.
+
+  A máquina de desenvolvimento roda Oracle + Kafka + Connect + ClickHouse
+  simultaneamente. Sem teto, o ClickHouse reserva ~90% da RAM da máquina e
+  o Oracle não sobe. 0.35 deixa ~5 GB para o ClickHouse num host de 16 GB.
+-->
+<clickhouse>
+    <max_server_memory_usage_to_ram_ratio>0.35</max_server_memory_usage_to_ram_ratio>
+    <mark_cache_size>536870912</mark_cache_size>
+    <uncompressed_cache_size>1073741824</uncompressed_cache_size>
+
+    <logger>
+        <level>information</level>
+    </logger>
+</clickhouse>

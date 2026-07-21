@@ -1,0 +1,37 @@
+{
+  "name": "projudi-proc-connector",
+  "config": {
+    "connector.class": "io.debezium.connector.oracle.OracleConnector",
+    "tasks.max": "1",
+
+    "database.hostname": "oracle",
+    "database.port": "1521",
+    "database.user": "${ORACLE_DBZ_USER}",
+    "database.password": "${ORACLE_DBZ_PASSWORD}",
+    "database.dbname": "FREE",
+    "database.pdb.name": "FREEPDB1",
+
+    "topic.prefix": "${DEBEZIUM_TOPIC_PREFIX}",
+    "schema.include.list": "PROJUDI",
+    "table.include.list": "PROJUDI.PROC",
+
+    "snapshot.mode": "initial",
+    "skipped.operations": "none",
+    "tombstones.on.delete": "false",
+    "heartbeat.interval.ms": "10000",
+
+    "decimal.handling.mode": "double",
+    "time.precision.mode": "connect",
+    "lob.enabled": "false",
+
+    "log.mining.strategy": "online_catalog",
+
+    "schema.history.internal.kafka.bootstrap.servers": "kafka:9092",
+    "schema.history.internal.kafka.topic": "schema-history.${DEBEZIUM_TOPIC_PREFIX}",
+
+    "key.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "key.converter.schemas.enable": "false",
+    "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "value.converter.schemas.enable": "false"
+  }
+}

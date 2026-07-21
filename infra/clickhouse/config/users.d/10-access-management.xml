@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<!--
+  Habilita gerenciamento de acesso via SQL para o usuário `default`.
+
+  Sem isso, `CREATE USER` / `GRANT` executados pelos scripts de init
+  (ver ddl/90_app_user.sh) falham com "Not enough privileges".
+
+  O usuário de aplicação em si NÃO é declarado aqui de propósito: a senha vem
+  do .env e este arquivo é estático e versionado. Ele é criado via SQL, e fica
+  persistido em /var/lib/clickhouse/access (dentro do volume nomeado).
+-->
+<clickhouse>
+    <users>
+        <default>
+            <access_management>1</access_management>
+            <named_collection_control>1</named_collection_control>
+        </default>
+    </users>
+</clickhouse>
