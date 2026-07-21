@@ -1,0 +1,78 @@
+{
+  // ===========================================================================
+  // Ambiente de desenvolvimento em container.
+  //
+  // Existe porque a máquina de desenvolvimento é um notebook corporativo do
+  // TJ-GO, com usuário de domínio sem privilégio administrativo e com WSL2 /
+  // Hyper-V desabilitados na imagem. Nessas condições NÃO é possível instalar
+  // Docker Desktop, Podman ou Rancher Desktop localmente — todos exigem admin
+  // para habilitar a plataforma de virtualização do Windows.
+  //
+  // Com este arquivo, o repositório roda inteiro em:
+  //   * GitHub Codespaces (navegador, sem instalar nada na máquina), ou
+  //   * qualquer host Linux com Docker, via VS Code Dev Containers.
+  //
+  // O Docker fica DENTRO do dev container (feature docker-in-docker), então o
+  // `docker compose` de infra/docker-compose.yml funciona sem alteração.
+  // ===========================================================================
+
+  "name": "projudi-log-offload",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
+
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {
+      "version": "latest",
+      "moby": true
+    },
+    // Java 8 + Maven para a Frente B (log-writer). A versão 8 é a mesma que o
+    // pom do Projudi declara — ver docs/decisoes.md, seção 14.
+    "ghcr.io/devcontainers/features/java:1": {
+      "version": "8",
+      "installMaven": true,
+      "mavenVersion": "3.9.9"
+    }
+  },
+
+  // Oracle + Kafka + Connect + ClickHouse juntos pedem ~8-10 GB. O tipo de
+  // máquina de 2 núcleos / 8 GB do Codespaces NÃO é suficiente: o Oracle sobe
+  // e é morto pelo OOM killer. Esta declaração faz o Codespaces oferecer
+  // apenas tipos compatíveis.
+  "hostRequirements": {
+    "cpus": 4,
+    "memory": "16gb",
+    "storage": "64gb"
+  },
+
+  "forwardPorts": [8123, 9000, 1521, 29092, 8083, 8080],
+  "portsAttributes": {
+    "8123":  { "label": "ClickHouse HTTP",  "onAutoForward": "notify" },
+    "9000":  { "label": "ClickHouse nativo", "onAutoForward": "silent" },
+    "1521":  { "label": "Oracle",            "onAutoForward": "silent" },
+    "29092": { "label": "Kafka",             "onAutoForward": "silent" },
+    "8083":  { "label": "Kafka Connect",     "onAutoForward": "silent" },
+    "8080":  { "label": "Kafka UI",          "onAutoForward": "notify" }
+  },
+
+  // Só o que falta na imagem base. O download das imagens (~3 GB) NÃO é feito
+  // aqui de propósito: levaria vários minutos e um timeout na criação do
+  // Codespace é bem mais confuso de diagnosticar do que um `make setup` que
+  // falha com mensagem clara.
+  "postCreateCommand": "sudo apt-get update -qq && sudo apt-get install -y -qq make && chmod +x scripts/*.sh infra/oracle/init/*.sh",
+
+  "postAttachCommand": {
+    "instrucoes": "echo '\\nAmbiente pronto. Próximo passo:  make setup && make up && make validate\\n'"
+  },
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-azuretools.vscode-docker",
+        "vscjava.vscode-java-pack",
+        "redhat.vscode-xml",
+        "mtxr.sqltools"
+      ]
+    }
+  },
+
+  "remoteUser": "vscode"
+}
