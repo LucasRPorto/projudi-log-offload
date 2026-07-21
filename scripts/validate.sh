@@ -57,8 +57,13 @@ ORACLE_DBZ_USER="${ORACLE_DBZ_USER:-c##dbzuser}"
 if [ -t 1 ]; then
     C_RESET=$'\033[0m'; C_BOLD=$'\033[1m'; C_DIM=$'\033[2m'
     C_RED=$'\033[31m';  C_GREEN=$'\033[32m'; C_YELLOW=$'\033[33m'
+    # volta ao início da linha e apaga até o fim dela: sem isso, a linha de
+    # progresso "aguardando <container> ..." fica aparecendo por baixo do
+    # resultado, produzindo saídas como "projudi-kafka saudávelka ..."
+    C_LIMPA=$'\r\033[2K'
 else
     C_RESET=""; C_BOLD=""; C_DIM=""; C_RED=""; C_GREEN=""; C_YELLOW=""
+    C_LIMPA=""
 fi
 
 PASS=0; FAIL=0; WARNS=0
@@ -76,6 +81,31 @@ trim() { tr -d '\r' | tr -d '[:space:]'; }
 ch()     { dc exec -T clickhouse clickhouse-client --query "$1" 2>/dev/null; }
 ch_app() { dc exec -T clickhouse clickhouse-client --user "${CH_APP_USER}" \
               --password "${CH_APP_PASSWORD}" --query "$1" 2>/dev/null; }
+
+# Reexecuta mostrando o erro. Existe porque engolir o stderr das consultas deixa
+# falhas indistinguíveis de "retornou vazio", e o diagnóstico fica impossível.
+ch_erro() { dc exec -T clickhouse clickhouse-client --query "$1" 2>&1 >/dev/null | tail -3; }
+
+# Consulta que deve devolver um valor exato, com reexecução.
+#
+# O `healthy` do Docker garante que o servidor aceita conexão, não que ele
+# terminou de carregar os metadados de todos os bancos. Sem reexecutar, uma
+# consulta feita nessa janela produz falso negativo — foi o que aconteceu na
+# primeira execução real: "banco projudi_logs NÃO existe" impresso logo acima de
+# "projudi_logs.log_raw existe".
+ch_valor() {
+    local query="$1" esperado="$2" i saida=""
+    for i in 1 2 3 4 5; do
+        saida="$(ch "${query}" | trim)"
+        if [ "${saida}" = "${esperado}" ]; then
+            printf '%s' "${saida}"
+            return 0
+        fi
+        sleep 2
+    done
+    printf '%s' "${saida}"
+    return 1
+}
 
 ora() {
     dc exec -T oracle sqlplus -S -L \
@@ -122,11 +152,13 @@ else
 fi
 
 for c in ${CONTAINERS}; do
-    printf '     aguardando %s ...\r' "${c}"
+    [ -n "${C_LIMPA}" ] && printf '     aguardando %s ...' "${c}"
     if wait_healthy "${c}" 300; then
+        printf '%s' "${C_LIMPA}"
         ok "${c} saudável"
     else
         rc=$?
+        printf '%s' "${C_LIMPA}"
         if [ "${rc}" -eq 2 ]; then
             bad "${c} não existe — o ambiente subiu? (make up)"
         else
@@ -143,14 +175,16 @@ fi
 # -----------------------------------------------------------------------------
 title "a  ClickHouse — bancos e tabelas"
 
-if [ "$(ch 'SELECT 1' | trim)" = "1" ]; then
+if ch_valor 'SELECT 1' '1' >/dev/null; then
     ok "ClickHouse respondendo (versão $(ch 'SELECT version()' | trim))"
 else
-    bad "ClickHouse não respondeu a 'SELECT 1'"
+    bad "ClickHouse não respondeu a 'SELECT 1' após 5 tentativas"
+    info "erro: $(ch_erro 'SELECT 1')"
+    info "sem isso, os itens seguintes não têm valor — investigue antes de continuar"
 fi
 
 for db in projudi_logs projudi_historico; do
-    if [ "$(ch "SELECT count() FROM system.databases WHERE name = '${db}'" | trim)" = "1" ]; then
+    if ch_valor "SELECT count() FROM system.databases WHERE name = '${db}'" '1' >/dev/null; then
         ok "banco ${db} existe"
     else
         bad "banco ${db} NÃO existe — os DDLs de init não rodaram (volume pré-existente? use 'make reset')"
@@ -159,7 +193,7 @@ done
 
 check_tabela() {
     local db="$1" tabela="$2" tipo="$3"
-    if [ "$(ch "SELECT count() FROM system.tables WHERE database='${db}' AND name='${tabela}'" | trim)" = "1" ]; then
+    if ch_valor "SELECT count() FROM system.tables WHERE database='${db}' AND name='${tabela}'" '1' >/dev/null; then
         ok "${db}.${tabela} existe (${tipo})"
     else
         bad "${db}.${tabela} NÃO existe"
@@ -172,14 +206,13 @@ check_tabela projudi_historico proc_cdc       "MergeTree"
 check_tabela projudi_historico proc_cdc_kafka "Kafka engine"
 check_tabela projudi_historico proc_cdc_mv    "MATERIALIZED VIEW"
 
-N_COLS="$(ch "SELECT count() FROM system.columns WHERE database='projudi_historico' AND table='proc_cdc'" | trim)"
-if [ "${N_COLS}" = "47" ]; then
+if N_COLS="$(ch_valor "SELECT count() FROM system.columns WHERE database='projudi_historico' AND table='proc_cdc'" '47')"; then
     ok "proc_cdc com 47 colunas (43 da PROC + 4 de metadata CDC)"
 else
     bad "proc_cdc tem ${N_COLS} colunas, esperado 47 (43 da PROC + 4 de metadata)"
 fi
 
-if [ "$(ch "SELECT count() FROM system.users WHERE name = '${CH_APP_USER}'" | trim)" = "1" ]; then
+if ch_valor "SELECT count() FROM system.users WHERE name = '${CH_APP_USER}'" '1' >/dev/null; then
     ok "usuário de aplicação '${CH_APP_USER}' existe"
 else
     bad "usuário de aplicação '${CH_APP_USER}' NÃO existe (ver ddl/90_app_user.sh)"

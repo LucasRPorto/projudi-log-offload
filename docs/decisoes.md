@@ -346,16 +346,37 @@ O que **foi** verificado estaticamente:
   (43 + 4 de metadata), 13 na `log_raw`;
 - portas 1521, 8080, 8083, 8123, 9000, 9092 e 29092 livres na máquina.
 
-O que **não** foi verificado e precisa de uma execução real:
+### Confirmado na primeira execução real
+
+Executado em 2026-07-21 numa máquina Linux (WSL) com Docker 28.4 e apenas 3 GB
+disponíveis ao daemon, em modo reduzido (`make up-lite && make validate-lite`):
+
+| Item | Resultado |
+|---|---|
+| `setup.sh` de ponta a ponta: detecção de Docker/Compose, aviso de RAM, checagem de portas, criação do `.env`, pull das imagens | ✅ |
+| Build da imagem do Connect com o `ojdbc11` baixado do Maven Central (decisão 4) | ✅ |
+| Aplicação dos **6 DDLs** do ClickHouse no primeiro start | ✅ |
+| `CREATE DATABASE ... COMMENT` aceito | ✅ |
+| `log_raw` com os codecs e os data skipping indexes | ✅ |
+| `proc_cdc` criada com exatamente **47 colunas** | ✅ |
+| `proc_cdc_kafka` (engine Kafka, `JSONAsString`) | ✅ |
+| **`proc_cdc_mv`** — a MATERIALIZED VIEW com `JSONExtract`, `accurateCastOrNull` e `toDateTime64` sobre `Nullable` | ✅ |
+| `90_app_user.sh` executado por *source* (sem bit de execução) e usuário `projudi_app` criado | ✅ |
+| Healthchecks, rede e volumes nomeados do compose | ✅ |
+
+O risco número 1 da lista anterior — "a MV aceita as expressões" — **está
+eliminado**: se qualquer expressão fosse inválida, a MV não teria sido criada.
+
+### O que ainda depende do ambiente de referência
 
 | Item | Como confirmar |
 |---|---|
 | `ENABLE_ARCHIVELOG` surte efeito na imagem `faststart` | item `f` do `make validate` |
-| Scripts de `initdb.d` executam com o bit de execução vindo do checkout | log do container: `make logs s=oracle` |
-| Sintaxe/semântica dos DDLs contra o ClickHouse real | itens `a` e `e` do `make validate` |
-| A MV aceita as expressões `JSONExtract` / `accurateCastOrNull` | criação da MV falharia no init; item `a` |
-| Build da imagem do Connect com acesso ao Maven Central | `make setup` |
+| Init do Oracle: usuário `PROJUDI`, 3 tabelas, seed, `c##dbzuser`, supplemental logging | itens `b` e `f` |
+| Scripts de `initdb.d` do Oracle executam com o bit de execução vindo do checkout | log do container: `make logs s=oracle` |
+| Kafka Connect no ar e plugin Oracle do Debezium listado | item `d` do `make validate` |
 | Compatibilidade cp-kafka 8.0.6 × Debezium 3.6 | item `d` do `make validate` |
+| Escrita e leitura pelo usuário de aplicação (item `e`) | saída da primeira execução ficou truncada; reexecutar |
 
 O caminho fim a fim do CDC (Oracle → Kafka → ClickHouse) é escopo da Frente C e
 **não** faz parte do critério de aceite desta sessão.
