@@ -8,7 +8,6 @@ import java.io.UnsupportedEncodingException;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
-import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.Date;
@@ -24,6 +23,7 @@ import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 
 import br.jus.tjgo.projudi.logwriter.apoio.PayloadsReais;
+import br.jus.tjgo.projudi.logwriter.apoio.SondaHttp;
 import br.jus.tjgo.projudi.logwriter.sink.BufferedLogSink;
 import br.jus.tjgo.projudi.logwriter.sink.ClickHouseLogSink;
 
@@ -55,6 +55,7 @@ class ClickHouseIntegracaoIT {
 
     private ConexaoSupplier conexoes;
     private IdGerador gerador;
+    private boolean conectado;
 
     @BeforeAll
     void prepararAmbiente() throws Exception {
@@ -65,21 +66,44 @@ class ClickHouseIntegracaoIT {
         conexoes = new ConexaoSupplier.DoDriverManager(url, usuario, senha);
         gerador = new IdGerador(1023L); // worker reservado ao teste de integração
 
-        Connection cx = conexoes.obter();
-        try {
-            Statement st = cx.createStatement();
-            try {
-                st.execute("SELECT 1");
-            } finally {
-                st.close();
-            }
-        } finally {
-            cx.close();
+        // Sonda TCP ANTES do driver. O SQLException do clickhouse-jdbc para uma
+        // porta que aceita e reseta é um rastro de 40 quadros que não distingue
+        // "ninguém escutando" de "container subindo" de "porta ocupada por
+        // outro serviço" — e as três têm conserto diferente.
+        SondaHttp.Diagnostico diagnostico = SondaHttp.sondarUrlJdbc(url, 3000);
+        if (!diagnostico.pronto()) {
+            throw new IllegalStateException(SondaHttp.explicar(diagnostico, url, usuario));
         }
+
+        try {
+            Connection cx = conexoes.obter();
+            try {
+                Statement st = cx.createStatement();
+                try {
+                    st.execute("SELECT 1");
+                } finally {
+                    st.close();
+                }
+            } finally {
+                cx.close();
+            }
+        } catch (Exception e) {
+            // O /ping respondeu, então o TCP está bom: sobra credencial, base
+            // ausente, ou o driver. Manter a causa original encadeada.
+            throw new IllegalStateException(
+                    SondaHttp.explicar(diagnostico, url, usuario) + "\nErro do driver: " + e, e);
+        }
+        conectado = true;
     }
 
     @AfterAll
     void limparRastros() throws Exception {
+        // Sem conexão não há rastro a limpar — e insistir aqui só empilharia uma
+        // segunda exceção por cima da que realmente interessa, como aconteceu no
+        // primeiro diagnóstico do WSL (o "Suppressed: Connection reset").
+        if (!conectado) {
+            return;
+        }
         // Só o que este teste escreveu: identificado pelo workerId 1023.
         executar("ALTER TABLE " + TABELA + " DELETE WHERE bitAnd(bitShiftRight(ID_LOG, 12), 1023) = 1023");
     }

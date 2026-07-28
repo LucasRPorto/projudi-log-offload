@@ -14,7 +14,7 @@ exatamente igual, e o formato dos CLOBs é preservado byte a byte, sem parsing.
 
 > **`mvn test` verde NÃO significa integração validada.**
 >
-> Os 57 testes unitários rodam sem ClickHouse e sem Oracle de pé, por desenho
+> Os 63 testes unitários rodam sem ClickHouse e sem Oracle de pé, por desenho
 > (decisão 23). Eles provam o SQL, a ordem das colunas, o tipo de cada ligação
 > de parâmetro e todo o comportamento de fila, lote e fallback — mas **nenhuma
 > linha desta biblioteca jamais gravou num banco real**.
@@ -39,15 +39,27 @@ cd log-writer
 mvn test -Dclickhouse.integracao=true
 ```
 
-**Esperado:** `Tests run: 61, Failures: 0, Errors: 0, Skipped: 0` — os 4 testes
+**Esperado:** `Tests run: 67, Failures: 0, Errors: 0, Skipped: 0` — os 4 testes
 hoje pulados passam a executar. Se continuarem em `Skipped`, a propriedade não
 chegou ao surefire e nada foi testado.
 
-**Já verificado nesta frente:** a conexão abre. O erro
+**Já verificado nesta frente:** o driver carrega. O erro
 `No suitable driver found for jdbc:ch://…` que aparecia aqui era falta de
-`slf4j-api`, corrigida na decisão 25, e está coberta por `ConexaoSupplierTest`.
+`slf4j-api`, corrigida na decisão 25 e coberta por `ConexaoSupplierTest`.
 O que continua sem prova é a **gravação**: ida e volta dos payloads, integridade
 byte a byte e as 13 colunas.
+
+> **Se falhar com `Connection reset`, não é o log-writer.** O teste agora sonda
+> o `/ping` por socket cru antes de tocar no driver e imprime um diagnóstico
+> com a causa provável e os comandos — em vez do rastro de 40 quadros do
+> `SQLException`. Confirme com `curl http://localhost:8123/ping`: se o `curl`
+> falhar igual, o problema é do ambiente.
+>
+> **Cuidado com o healthcheck:** o do compose roda `clickhouse-client` *dentro*
+> do container, pelo protocolo nativo. Ele pode reportar `healthy` sem que a
+> porta HTTP 8123 esteja utilizável a partir do host — que é o caminho que o
+> log-writer usa. `make up-lite` terminar sem erro não prova que o JDBC
+> conecta.
 
 ### 2. `OracleLogSink` contra um Oracle real
 
@@ -308,7 +320,7 @@ IdGerador.sequenciaDe(id);  // 0..4095
 mvn test
 ```
 
-57 testes unitários, **sem depender de ClickHouse nem de Oracle de pé** — e,
+63 testes unitários, **sem depender de ClickHouse nem de Oracle de pé** — e,
 pela mesma razão, sem provar nada sobre a gravação real (ver "Pendências de
 validação"). A
 costura que permite isso é o `ConexaoSupplier`: o `JdbcFalso` (em
