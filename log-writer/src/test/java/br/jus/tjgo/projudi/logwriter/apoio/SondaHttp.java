@@ -1,5 +1,6 @@
 package br.jus.tjgo.projudi.logwriter.apoio;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -129,21 +130,39 @@ public final class SondaHttp {
                     .getBytes("US-ASCII"));
             saida.flush();
 
+            // Ler até o fim, NÃO um read() só.
+            //
+            // O ClickHouse responde /ping com os cabeçalhos e, em chunk
+            // separado, o corpo "Ok.". Um único read() costuma trazer apenas os
+            // cabeçalhos — TCP não promete que os dois cheguem no mesmo
+            // segmento. Procurar "Ok." nesse primeiro pedaço faz um servidor
+            // perfeitamente saudável ser classificado como "outro serviço na
+            // porta", com a primeira linha (HTTP/1.1 200 OK) como prova falsa.
+            // Como a requisição é HTTP/1.0 com Connection: close, o servidor
+            // fecha ao terminar e o laço encerra sozinho.
             InputStream entrada = socket.getInputStream();
-            byte[] buffer = new byte[512];
-            int lidos = entrada.read(buffer);
+            ByteArrayOutputStream acumulado = new ByteArrayOutputStream();
+            byte[] buffer = new byte[1024];
+            int lidos;
+            while ((lidos = entrada.read(buffer)) > 0 && acumulado.size() < 8192) {
+                acumulado.write(buffer, 0, lidos);
+                if (acumulado.toString("US-ASCII").contains("Ok.")) {
+                    break; // achou o que interessa; não precisa esperar o resto
+                }
+            }
 
-            if (lidos < 0) {
+            if (acumulado.size() == 0) {
                 return new Diagnostico(Resultado.CONEXAO_RESETADA, host, porta,
                         "o servidor fechou a conexão sem responder nada");
             }
-            String resposta = new String(buffer, 0, lidos, "US-ASCII");
+            String resposta = acumulado.toString("US-ASCII");
             if (resposta.contains("Ok.")) {
                 return new Diagnostico(Resultado.PRONTO, host, porta, "respondeu Ok. ao /ping");
             }
             String primeiraLinha = resposta.split("\\r?\\n", 2)[0];
             return new Diagnostico(Resultado.RESPOSTA_INESPERADA, host, porta,
-                    "respondeu \"" + primeiraLinha + "\" — a porta pode estar ocupada por outro serviço");
+                    "respondeu \"" + primeiraLinha + "\" e nunca enviou \"Ok.\" ("
+                            + acumulado.size() + " bytes lidos até o fim da resposta)");
 
         } catch (SocketTimeoutException e) {
             return new Diagnostico(Resultado.SEM_RESPOSTA, host, porta,

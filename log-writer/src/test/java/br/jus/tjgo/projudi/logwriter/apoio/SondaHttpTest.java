@@ -157,6 +157,42 @@ class SondaHttpTest {
 
     @Test
     @Timeout(30)
+    @DisplayName("cabeçalho e corpo em segmentos separados ainda dão PRONTO")
+    void respostaFatiadaEmDoisSegmentos() throws Exception {
+        // E assim que o ClickHouse real responde: cabecalhos primeiro, corpo
+        // depois, em chunk separado. Uma sonda que faz um read() so enxerga
+        // "HTTP/1.1 200 OK" e conclui, errado, que ha outro servico na porta.
+        ServidorFalso servidor = new ServidorFalso(new Comportamento() {
+            @Override
+            public void atender(Socket cliente) throws IOException {
+                OutputStream saida = cliente.getOutputStream();
+                saida.write(("HTTP/1.1 200 OK\r\nConnection: Close\r\n"
+                        + "Content-Type: text/html; charset=UTF-8\r\n"
+                        + "Transfer-Encoding: chunked\r\n\r\n")
+                        .getBytes("US-ASCII"));
+                saida.flush();
+                try {
+                    Thread.sleep(150L); // forca segmentos distintos
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+                saida.write(("4\r\nOk.\n\r\n0\r\n\r\n")
+                        .getBytes("US-ASCII"));
+                saida.flush();
+                cliente.close();
+            }
+        });
+        try {
+            SondaHttp.Diagnostico d = SondaHttp.sondar("127.0.0.1", servidor.porta(), TIMEOUT);
+            assertEquals(SondaHttp.Resultado.PRONTO, d.resultado,
+                    "resposta fatiada foi classificada errado: " + d);
+        } finally {
+            servidor.close();
+        }
+    }
+
+    @Test
+    @Timeout(30)
     @DisplayName("outro serviço na porta vira RESPOSTA_INESPERADA")
     void outroServicoNaPorta() throws Exception {
         ServidorFalso servidor = new ServidorFalso(new Comportamento() {

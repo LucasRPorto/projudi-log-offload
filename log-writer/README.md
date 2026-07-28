@@ -14,7 +14,7 @@ exatamente igual, e o formato dos CLOBs é preservado byte a byte, sem parsing.
 
 > **`mvn test` verde NÃO significa integração validada.**
 >
-> Os 63 testes unitários rodam sem ClickHouse e sem Oracle de pé, por desenho
+> Os 64 testes unitários rodam sem ClickHouse e sem Oracle de pé, por desenho
 > (decisão 23). Eles provam o SQL, a ordem das colunas, o tipo de cada ligação
 > de parâmetro e todo o comportamento de fila, lote e fallback — mas **nenhuma
 > linha desta biblioteca jamais gravou num banco real**.
@@ -39,7 +39,7 @@ cd log-writer
 mvn test -Dclickhouse.integracao=true
 ```
 
-**Esperado:** `Tests run: 67, Failures: 0, Errors: 0, Skipped: 0` — os 4 testes
+**Esperado:** `Tests run: 68, Failures: 0, Errors: 0, Skipped: 0` — os 4 testes
 hoje pulados passam a executar. Se continuarem em `Skipped`, a propriedade não
 chegou ao surefire e nada foi testado.
 
@@ -320,7 +320,7 @@ IdGerador.sequenciaDe(id);  // 0..4095
 mvn test
 ```
 
-63 testes unitários, **sem depender de ClickHouse nem de Oracle de pé** — e,
+64 testes unitários, **sem depender de ClickHouse nem de Oracle de pé** — e,
 pela mesma razão, sem provar nada sobre a gravação real (ver "Pendências de
 validação"). A
 costura que permite isso é o `ConexaoSupplier`: o `JdbcFalso` (em
