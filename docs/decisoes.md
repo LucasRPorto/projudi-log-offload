@@ -1005,3 +1005,164 @@ têm a mesma forma: **o artefato estava correto pelo que dava para inspecionar, 
 errado pelo que só o ambiente sabe**. A diferença aqui é o agravante de a
 plataforma ter engolido o erro — não bastava executar, era preciso executar e
 não acreditar na mensagem.
+
+---
+
+## 26. Bind mount sobre `config.d/` escondia o `docker_related_config.xml`
+
+Erro de construção da Frente A, descoberto em 2026-07-28 pela Frente B, na
+**primeira vez que um cliente tentou falar com o ClickHouse a partir do host**.
+Sobreviveu ao `make validate` com 32 itens verdes, ao healthcheck do compose e a
+seis dias de ambiente no ar.
+
+### O sintoma
+
+```
+$ curl -v http://localhost:8123/ping
+* Connected to localhost (::1) port 8123
+* Recv failure: Connection reset by peer
+```
+
+E, pelo JDBC, `SQLException: Connection reset` com 40 quadros de pilha. Ao mesmo
+tempo:
+
+```
+$ docker compose ps
+projudi-clickhouse  ... Up 18 minutes (healthy)   0.0.0.0:8123->8123/tcp
+```
+
+Container saudável, porta publicada, e nenhum cliente do host conseguindo falar
+com ele.
+
+### A causa
+
+O compose montava os **diretórios** de configuração:
+
+```yaml
+- ./clickhouse/config/config.d:/etc/clickhouse-server/config.d:ro
+- ./clickhouse/config/users.d:/etc/clickhouse-server/users.d:ro
+```
+
+Um bind mount de diretório **substitui** o conteúdo do diretório no container,
+não se funde com ele. A imagem oficial instala em `config.d/` o arquivo
+`docker_related_config.xml`, que contém:
+
+```xml
+<listen_host>::</listen_host>
+<listen_host>0.0.0.0</listen_host>
+<listen_try>1</listen_try>
+```
+
+Sem ele, vale o `listen_host` padrão do `config.xml`: apenas `127.0.0.1` e
+`::1` — localhost **de dentro do container**. O `docker-proxy` aceita a conexão
+no host, tenta repassá-la para o IP do container na rede bridge, é recusado, e
+derruba o cliente com RST.
+
+**A prova estava no próprio log do container**, e passou despercebida por seis
+dias:
+
+```
+Processing configuration file '/etc/clickhouse-server/config.xml'.
+Merging configuration file '/etc/clickhouse-server/config.d/10-projudi.xml'.
+```
+
+Num container saudável haveria uma segunda linha `Merging …
+docker_related_config.xml`. A ausência de uma linha é o tipo de evidência que
+ninguém procura.
+
+O mesmo mount tinha um problema irmão, esse com mensagem explícita e igualmente
+ignorada:
+
+```
+/entrypoint.sh: line 147: /etc/clickhouse-server/users.d/default-user.xml: Read-only file system
+```
+
+O entrypoint precisa **escrever** em `users.d/`, e o `:ro` no diretório impede.
+
+### Por que o `make validate` não pegou
+
+Porque **todas** as suas checagens de ClickHouse falam com o servidor por dentro:
+
+```bash
+ch() { docker compose exec -T clickhouse clickhouse-client --query "$1"; }
+```
+
+O healthcheck do compose tem o mesmo vício:
+
+```yaml
+test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+```
+
+Ambos conectam por localhost dentro do container, onde o servidor **estava**
+escutando. Os 32 itens verdes eram verdadeiros e irrelevantes para a única
+pergunta que importava à Solução 1: *um cliente JDBC no host consegue gravar?*
+
+A Frente A validou o ambiente pelo lado de dentro. O primeiro consumidor real
+chegou pelo lado de fora.
+
+### Correção
+
+**1. Montar arquivo a arquivo, nunca o diretório:**
+
+```yaml
+- ./clickhouse/config/config.d/10-projudi.xml:/etc/clickhouse-server/config.d/10-projudi.xml:ro
+- ./clickhouse/config/users.d/10-access-management.xml:/etc/clickhouse-server/users.d/10-access-management.xml:ro
+```
+
+Preserva o que a imagem instala e devolve a `users.d/` a permissão de escrita que
+o entrypoint precisa. Ressalva já registrada na decisão 4: bind mount de arquivo
+cujo caminho no host não existe faz o Docker criar um **diretório** com aquele
+nome. Os dois arquivos são versionados, então isso não acontece aqui — mas quem
+renomear um deles sem ajustar o compose vai encontrar esse comportamento.
+
+**2. Checagem de acesso pelo host no `make validate`:**
+
+```bash
+curl -sS --max-time 10 "http://localhost:${CH_HTTP_PORT}/ping"   # tem que responder "Ok."
+```
+
+É a correção mais importante das duas. Sem ela, o mesmo erro — ou qualquer outro
+que afete só o caminho externo — volta a passar despercebido. O item falha com
+o comando de diagnóstico junto, e degrada para aviso quando não há `curl`.
+
+### Aplicação
+
+A correção exige **recriar** o container, não reiniciar: bind mounts são
+resolvidos na criação.
+
+```bash
+docker compose --env-file .env -f infra/docker-compose.yml up -d --force-recreate clickhouse
+```
+
+Os volumes nomeados são preservados, então não há perda de dados nem
+reexecução dos DDLs.
+
+### Lição
+
+É a quarta suposição do trabalho que só cai em execução real (decisões 5, 18, 25
+e esta), e a segunda em que a **verificação existia e olhava para o lado
+errado**. A decisão 18 dizia: persistência em container não é sobre o que
+funciona enquanto o container está de pé, é sobre o que sobrevive quando ele
+deixa de existir. Esta acrescenta o par: **acessibilidade em container não é
+sobre o que responde de dentro, é sobre o que responde de fora** — e um
+healthcheck que só olha para dentro atesta exatamente aquilo que nunca esteve em
+dúvida.
+
+### Pendência relacionada, não resolvida
+
+O log do init traz também:
+
+```
+/docker-entrypoint-initdb.d/90_app_user.sh: line 27: default: command not found
+```
+
+A linha 27 é a invocação do `clickhouse-client` com heredoc, e o usuário
+`projudi_app` **é criado com sucesso** (a linha seguinte confirma, e o
+`make validate` verifica). Não é a causa de nada observado até aqui e não foi
+diagnosticado — o script é executado via `source` pelo entrypoint, e a mensagem
+sugere alguma interação entre esse contexto e a expansão da linha. Fica
+registrado como ruído conhecido, a investigar com:
+
+```bash
+docker compose exec clickhouse sh -c 'sed -n "140,160p" /entrypoint.sh'
+```

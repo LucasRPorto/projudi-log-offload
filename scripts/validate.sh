@@ -219,6 +219,41 @@ else
     info "sem isso, os itens seguintes não têm valor — investigue antes de continuar"
 fi
 
+# -----------------------------------------------------------------------------
+# Acesso a partir do HOST, e não de dentro do container.
+#
+# Todas as demais checagens de ClickHouse deste script usam
+# `docker compose exec clickhouse clickhouse-client`, ou seja, falam com o
+# servidor por localhost DENTRO do container. O mesmo vale para o healthcheck do
+# compose. Nenhuma delas exercita o caminho que o log-writer usa de verdade:
+# HTTP 8123, do host para o container, via docker-proxy.
+#
+# Essa lacuna deixou passar a decisão 26 — o servidor escutando só em 127.0.0.1
+# interno, com 32 itens verdes e o container marcado healthy, enquanto qualquer
+# cliente JDBC recebia "Connection reset by peer".
+# -----------------------------------------------------------------------------
+CH_HTTP_PORT="${CLICKHOUSE_HTTP_PORT:-8123}"
+if command -v curl >/dev/null 2>&1; then
+    RESP_PING="$(curl -sS --max-time 10 "http://localhost:${CH_HTTP_PORT}/ping" 2>&1 || true)"
+    case "${RESP_PING}" in
+        *Ok.*)
+            ok "porta HTTP ${CH_HTTP_PORT} acessível a partir do host (é o caminho do log-writer)"
+            ;;
+        *)
+            bad "porta HTTP ${CH_HTTP_PORT} NÃO utilizável a partir do host"
+            info "resposta: ${RESP_PING:-<vazia>}"
+            info "o container pode estar healthy assim mesmo: o healthcheck fala com o"
+            info "servidor por dentro. Verifique se docker_related_config.xml não foi"
+            info "escondido por um bind mount sobre config.d/ — ver docs/decisoes.md, decisão 26:"
+            info "  docker compose --env-file .env -f ${COMPOSE_FILE} exec clickhouse ls /etc/clickhouse-server/config.d/"
+            ;;
+    esac
+else
+    warn "curl não encontrado: não foi possível testar a porta HTTP a partir do host"
+    info "é justamente o caminho que o log-writer usa; teste à mão com o navegador"
+    info "  http://localhost:${CH_HTTP_PORT}/ping   (deve responder 'Ok.')"
+fi
+
 for db in projudi_logs projudi_historico; do
     if ch_valor "SELECT count() FROM system.databases WHERE name = '${db}'" '1' >/dev/null; then
         ok "banco ${db} existe"
