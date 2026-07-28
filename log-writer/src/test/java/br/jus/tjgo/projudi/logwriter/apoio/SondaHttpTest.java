@@ -38,6 +38,16 @@ class SondaHttpTest {
                     pronto.countDown();
                     try {
                         Socket cliente = servidor.accept();
+                        cliente.setSoTimeout(3000);
+                        // Drenar a requisição ANTES de responder.
+                        //
+                        // Fechar um socket que ainda tem dados não lidos no
+                        // buffer de recepção faz o TCP emitir RST em vez de FIN
+                        // — e o RST descarta a resposta já escrita que estava em
+                        // trânsito. Sem este dreno, todo teste daqui vira uma
+                        // corrida entre o cliente ler e o servidor fechar, que
+                        // a máquina rápida ganha e a lenta perde.
+                        SondaHttpTest.drenarRequisicao(cliente);
                         comportamento.atender(cliente);
                     } catch (IOException e) {
                         // servidor fechado pelo teste
@@ -65,6 +75,29 @@ class SondaHttpTest {
 
     private interface Comportamento {
         void atender(Socket cliente) throws IOException;
+    }
+
+    /** Lê a requisição HTTP até o fim dos cabeçalhos, ou até o que der. */
+    private static void drenarRequisicao(Socket cliente) throws IOException {
+        java.io.InputStream entrada = cliente.getInputStream();
+        StringBuilder recebido = new StringBuilder();
+        int b;
+        try {
+            while (recebido.indexOf("\r\n\r\n") < 0 && (b = entrada.read()) >= 0) {
+                recebido.append((char) b);
+                if (recebido.length() > 4096) {
+                    break;
+                }
+            }
+        } catch (java.net.SocketTimeoutException e) {
+            // cliente que não manda requisição: segue e responde assim mesmo
+        }
+    }
+
+    /** Fecha emitindo FIN, e não RST: espelha um servidor bem-comportado. */
+    private static void fecharComGraca(Socket cliente) throws IOException {
+        cliente.shutdownOutput();
+        cliente.close();
     }
 
     @Test
@@ -138,7 +171,7 @@ class SondaHttpTest {
                 saida.write(("HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n"
                         + "Content-Length: 4\r\n\r\nOk.\n").getBytes("US-ASCII"));
                 saida.flush();
-                cliente.close();
+                fecharComGraca(cliente);
             }
         });
         try {
@@ -179,7 +212,7 @@ class SondaHttpTest {
                 saida.write(("4\r\nOk.\n\r\n0\r\n\r\n")
                         .getBytes("US-ASCII"));
                 saida.flush();
-                cliente.close();
+                fecharComGraca(cliente);
             }
         });
         try {
@@ -201,7 +234,7 @@ class SondaHttpTest {
                 OutputStream saida = cliente.getOutputStream();
                 saida.write("SSH-2.0-OpenSSH_9.6\r\n".getBytes("US-ASCII"));
                 saida.flush();
-                cliente.close();
+                fecharComGraca(cliente);
             }
         });
         try {

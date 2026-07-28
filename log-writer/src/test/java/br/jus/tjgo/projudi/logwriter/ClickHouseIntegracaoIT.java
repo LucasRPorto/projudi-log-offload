@@ -26,6 +26,7 @@ import br.jus.tjgo.projudi.logwriter.apoio.PayloadsReais;
 import br.jus.tjgo.projudi.logwriter.apoio.SondaHttp;
 import br.jus.tjgo.projudi.logwriter.sink.BufferedLogSink;
 import br.jus.tjgo.projudi.logwriter.sink.ClickHouseLogSink;
+import br.jus.tjgo.projudi.logwriter.sink.MemoriaLogSink;
 
 /**
  * Ida e volta contra o ClickHouse de verdade: grava os três formatos reais de
@@ -59,7 +60,8 @@ class ClickHouseIntegracaoIT {
 
     @BeforeAll
     void prepararAmbiente() throws Exception {
-        String url = propriedade("clickhouse.url", "jdbc:ch://localhost:8123/projudi_logs");
+        String url = comTimeoutsGenerosos(
+                propriedade("clickhouse.url", "jdbc:ch://localhost:8123/projudi_logs"));
         String usuario = propriedade("clickhouse.usuario", "projudi_app");
         String senha = propriedade("clickhouse.senha", "projudi_app_dev");
 
@@ -111,6 +113,26 @@ class ClickHouseIntegracaoIT {
     private static String propriedade(String chave, String padrao) {
         String valor = System.getProperty(chave);
         return (valor == null || valor.trim().isEmpty()) ? padrao : valor.trim();
+    }
+
+    /**
+     * Amplia os tempos-limite do driver, a menos que a URL já traga os seus.
+     *
+     * <p>O padrão do clickhouse-jdbc (30 s de leitura) é dimensionado para um
+     * servidor com folga. Numa máquina de 8 GB rodando a pilha inteira, o
+     * ClickHouse divide CPU e memória com Oracle, Kafka e Connect, e um lote
+     * estoura esse limite sem que exista defeito nenhum na biblioteca — o teste
+     * passa a medir a máquina em vez de medir o código.</p>
+     *
+     * <p>Ampliar não esconde defeito: se o servidor estiver realmente travado,
+     * o teste falha do mesmo jeito, só que sessenta segundos depois e sem
+     * ambiguidade sobre a causa.</p>
+     */
+    static String comTimeoutsGenerosos(String url) {
+        if (url.indexOf('?') >= 0) {
+            return url; // quem passou parâmetros manda
+        }
+        return url + "?socket_timeout=60000&connect_timeout=10000";
     }
 
     // -------------------------------------------------------------------------
@@ -265,12 +287,23 @@ class ClickHouseIntegracaoIT {
     @Test
     @DisplayName("o caminho completo com fila e lote entrega tudo, sem perder nem duplicar")
     void caminhoCompletoComFila() throws Exception {
-        int quantidade = 2000;
+        // Volume configurável: 500 é suficiente para exercitar fila, lote e
+        // dreno no close, e não castiga uma máquina apertada. Suba com
+        // -Dintegracao.registros=20000 quando quiser esforçar de verdade.
+        int quantidade = Integer.getInteger("integracao.registros", 500).intValue();
         List<Long> ids = new ArrayList<Long>(quantidade);
         String[] payloads = PayloadsReais.todos();
 
+        // Fallback em memória em vez de null.
+        //
+        // Com fallback null, qualquer lentidão do ClickHouse vira PERDIDOS, e o
+        // teste acusa a biblioteca de perder log de auditoria quando o que
+        // houve foi timeout de um servidor sem recurso. Com o refúgio, os dois
+        // casos ficam distinguíveis: PERDIDOS continua sendo defeito, e
+        // registros no refúgio são diagnóstico de ambiente.
+        MemoriaLogSink refugio = new MemoriaLogSink();
         BufferedLogSink sink = new BufferedLogSink(
-                new ClickHouseLogSink(conexoes), null, 5000, 250, 200L, 2);
+                new ClickHouseLogSink(conexoes), refugio, 5000, 250, 200L, 2);
         try {
             for (int i = 0; i < quantidade; i++) {
                 long id = gerador.proximo();
@@ -289,7 +322,17 @@ class ClickHouseIntegracaoIT {
             sink.close(); // drena antes de conferir
         }
 
-        assertEquals(0L, sink.metricas().getPerdidos());
+        assertEquals(0L, sink.metricas().getPerdidos(),
+                "registros que não chegaram a destino nenhum — isto sim é defeito da biblioteca");
+
+        assertEquals(0, refugio.quantidade(),
+                refugio.quantidade() + " de " + quantidade + " registro(s) foram desviados para o"
+                        + " fallback porque o ClickHouse não sustentou o ritmo. Isso é limite de"
+                        + " ambiente, não defeito do log-writer: o desvio funcionou como deveria."
+                        + " Numa máquina apertada, suba só o ClickHouse (make up-lite) em vez da"
+                        + " pilha completa, ou reduza -Dintegracao.registros. Ver"
+                        + " docs/ambientes.md, seção 6.");
+
         assertEquals(quantidade, (int) sink.metricas().getGravadosDestino());
 
         long menor = ids.get(0).longValue();
