@@ -234,7 +234,7 @@ projudi-log-offload/
 │   ├── clickhouse/ddl/         DDLs idempotentes aplicados no primeiro start
 │   ├── clickhouse/config/      config.d e users.d do servidor
 │   └── debezium/               Dockerfile (ojdbc) + template do conector
-├── log-writer/                 esqueleto Maven da Frente B (sem implementação)
+├── log-writer/                 biblioteca da Frente B (ver log-writer/README.md)
 ├── scripts/
 │   ├── setup.sh                pré-requisitos, .env, pull, build
 │   ├── validate.sh             bateria de validação
@@ -379,7 +379,7 @@ infraestrutura:
 
 | Frente | Escopo | Onde começa |
 |---|---|---|
-| **B — `log-writer`** | Cliente JDBC (Java 8) que a `LogPs` vai chamar: batching, tratamento de falha, e o benchmark de escrita contra o Oracle | `log-writer/` — `pom.xml` pronto, `src/` vazio |
+| **B — `log-writer`** | Cliente JDBC (Java 8) que a `LogPs` vai chamar: batching, tratamento de falha, e o benchmark de escrita contra o Oracle | `log-writer/` — implementado, 50 testes verdes; ver `log-writer/README.md` |
 | **C — Pipeline CDC** | Ajuste fino do conector, validação fim a fim, medição de latência e completude | `infra/debezium/connector-proc.json` + `validacao/03_consultas_cdc.sql` |
 
 O que a Frente A garante para elas:

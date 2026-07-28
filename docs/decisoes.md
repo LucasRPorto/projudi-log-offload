@@ -536,3 +536,300 @@ e só apareceu num evento de ciclo de vida — recriação de container — que 
 teste anterior havia exercitado. Persistência em container não é sobre o que
 funciona enquanto o container está de pé; é sobre o que sobrevive quando ele
 deixa de existir.
+
+---
+
+# Frente B — log-writer
+
+Sessão de 2026-07-28. As decisões abaixo foram tomadas **depois** da leitura da
+`LogPs.inserir(LogDt)` real em `../projudi`, não antes.
+
+---
+
+## 19. Batching e comportamento em falha
+
+A decisão mais pesada da frente, e a única levada explicitamente à decisão
+humana em vez de resolvida por conta própria.
+
+**Escolhido:** fila limitada em memória, gravação em lote por thread própria, e
+**desvio para um sink de fallback em toda situação anormal**
+(`BufferedLogSink`). Com `lote.max = 1`, o mesmo componente degrada para
+gravação síncrona — o que dá as duas pontas do benchmark sem código duplicado.
+
+### As alternativas e por que caíram
+
+| Alternativa | Por que não |
+|---|---|
+| **Síncrono, falha propaga** (semântica de hoje) | Garantia legal máxima e implementação trivial, mas transforma o ClickHouse em dependência de disponibilidade do Projudi inteiro: ClickHouse fora = Projudi fora. Trocar um ponto único de falha conhecido por um novo não é modernizar. |
+| **Síncrono com fallback** | Simples e seguro, mas paga 1 round-trip HTTP por log — exatamente o custo que o batching existe para eliminar — e enfraquece o número do benchmark. |
+| **Fila + lote, sem fallback** | Melhor desempenho e código mais limpo, mas registro de auditoria que deixa de existir num sistema judicial é dívida indefensável. |
+
+### O que a solução garante — e o que não garante
+
+**Garante:**
+
+- nenhum registro se perde por indisponibilidade do ClickHouse;
+- a thread do usuário nunca bloqueia esperando o ClickHouse e nunca recebe
+  exceção por causa de log;
+- a fila não cresce sem limite.
+
+**Não garante — e este é o ponto que precisa estar escrito com precisão:**
+
+> A durabilidade **não** é absoluta. Contra morte abrupta da JVM (`kill -9`, OOM
+> killer, queda de energia), o que estiver em memória e ainda não gravado se
+> perde.
+
+**Os dois números que delimitam a janela:**
+
+| Número | Padrão | O que delimita |
+|---|---|---|
+| `fila.capacidade` | 10.000 | teto de registros aguardando flush |
+| `lote.max` | 500 | registros já retirados da fila, em voo no lote corrente |
+
+**Pior caso: `fila.capacidade + lote.max` = 10.500 registros.** Em regime
+normal, com tráfego constante, a perda real é o que entrou nos últimos
+`lote.intervaloMs` (padrão: 1.000 ms), porque a fila não acumula.
+
+O encerramento ordenado (`LogWriter.encerrar()`, chamado de
+`contextDestroyed`) drena a fila e fecha a janela. Não há shutdown hook
+automático: um hook segurando referência ao sink impede a coleta do classloader
+da aplicação no undeploy do Tomcat.
+
+### Política de saturação: explícita, nunca silenciosa
+
+Fila cheia significa que o ClickHouse não está dando conta do ritmo de entrada.
+O registro vai **direto ao fallback, na thread chamadora**. Três coisas que
+isso deliberadamente **não** faz:
+
+- não deixa a fila crescer (ela é uma `ArrayBlockingQueue` limitada);
+- não bloqueia a thread chamadora à espera de vaga (`offer`, não `put`);
+- não descarta em silêncio.
+
+Escrever no Oracle na thread do usuário é o mesmo custo que o Projudi já paga
+hoje em 100% das gravações — no caminho de saturação isso é o comportamento
+atual, não uma regressão.
+
+### Fallback observável
+
+Todo registro que cai no Oracle é contável, por duas vias:
+
+- `Metricas.getGravadosFallback()`, separado em `desviosPorSaturacao` e
+  `desviosPorFalha`;
+- um logger dedicado, `projudi.logwriter.FALLBACK`, para roteamento sem filtro
+  de texto.
+
+Não é adorno. Durante a transição, **"quantos logs foram pelo caminho velho" é
+métrica operacional e material do relatório**: sem ela, um ClickHouse
+intermitente vira um desvio silencioso para o Oracle, e o ganho medido não
+corresponde ao que aconteceu de fato.
+
+`Metricas.getPerdidos()` é o único caminho de perda com o sink ativo — falha no
+destino **e** no fallback — e por isso é o número que precisa ser zero.
+
+### Limitação conhecida: a semântica de transação muda
+
+Hoje o log grava na **mesma conexão e na mesma transação** da operação de
+negócio (`LogNe.salvar` usa `FabricaConexao.PERSISTENCIA`, e a `LogPs` recebe
+essa conexão no construtor). Consequência: rollback do negócio desfaz o log
+junto.
+
+Com o writer, a gravação acontece fora daquela transação. Logo:
+
+> **Um log pode chegar ao ClickHouse mesmo que a operação de negócio sofra
+> rollback depois.**
+
+Não é resolvido no MVP, e fica registrado como limitação conhecida em vez de
+ser omitido. A mitigação futura é óbvia e barata: chamar o writer apenas após o
+commit da transação de negócio, em vez de durante. Isso exige um ponto de
+gancho pós-commit que o Projudi hoje não tem, o que é trabalho de escopo
+próprio.
+
+Vale notar a assimetria: hoje o rollback também apaga o registro de uma
+tentativa que *aconteceu*. Qual dos dois comportamentos é o correto para
+auditoria é uma discussão de requisito, não de implementação — mas a mudança
+precisa ser conhecida antes de ser aceita.
+
+---
+
+## 20. ID_LOG gerado no cliente
+
+O ClickHouse não tem sequence, e hoje o ID nasce no Oracle:
+`executarInsert(sql, "ID_LOG", ps)` envolve o INSERT em
+`BEGIN … RETURNING ID_LOG INTO ?; END;` (`Persistencia.java:581-587`), e o
+valor volta para `dados.setId(...)`, que a `LogNe` consome.
+
+**Escolhido:** identificador de 64 bits montado no processo, estilo Snowflake:
+
+```
+(millisDesde2020-01-01Z << 22) | (workerId << 12) | sequencia
+        41 bits                    10 bits          12 bits
+```
+
+Justificativas:
+
+- **Zero round-trip**, coerente com a decisão de não depender do Oracle na
+  escrita — e é o **único esquema compatível com gravação assíncrona**, porque
+  o ID precisa existir no instante em que a `LogPs` retorna, não quando o lote
+  é gravado.
+- **Monotônico crescente**: preserva o desempate do
+  `ORDER BY (HORA, ID_USU, ID_LOG)` da `log_raw` e a correlação temporal.
+- **Cabe em `UInt64` e em `NUMBER(24)`** nos dois lados.
+- **Faixa disjunta do histórico**, o que elimina colisão na migração futura.
+- **Mantém o contrato `dados.setId(...)`**.
+- **Habilita idempotência** do reenvio de lote e a verificação de completude do
+  benchmark por `count(DISTINCT ID_LOG)`.
+
+Rejeitadas: sequence do Oracle (reintroduz o acoplamento que a solução quer
+remover); sem ID (quebra `setId()`, perde o desempate e inviabiliza a
+verificação de completude); UUID (128 bits não cabem, e a aleatoriedade destrói
+a localidade da chave de ordenação).
+
+`workerId` é configurável por instância; ausente, é derivado de hostname+PID
+**com aviso no log** — com 1024 slots e várias JVMs contra o mesmo destino, a
+colisão não é impossível. Testes cobrem unicidade entre dois workers no mesmo
+milissegundo e o comportamento definido no estouro dos 4096 slots (espera o
+milissegundo seguinte; nunca reutiliza).
+
+### Verificação da numeração atual — correção de duas premissas
+
+A pergunta feita antes de implementar foi: gravar um ID explícito na
+`PROJUDI.LOG` pelo fallback quebra a numeração legada?
+
+**Resposta: não.** O trigger real, em `../projudi/BancoDeDados/07_CreateTrigger.sql`:
+
+```sql
+CREATE OR REPLACE TRIGGER "PROJUDI"."LOG_ID_LOG_TRG" BEFORE INSERT OR UPDATE ON LOG
+FOR EACH ROW
+...
+  IF INSERTING AND :new.Id_Log IS NULL THEN
+    SELECT Log_Id_Log_SEQ.NEXTVAL INTO v_newVal FROM DUAL;
+    ...
+    :new.Id_Log := v_newVal;
+  END IF;
+```
+
+Ele **só atribui quando o ID vem `NULL`**. Um ID preenchido não é sobrescrito e
+**não consome `LOG_ID_LOG_SEQ.NEXTVAL`** — a sequence é independente do
+`MAX(ID_LOG)` da tabela, então gravar um valor na casa de 10¹⁷ não empurra a
+numeração dos inserts legados. O fallback pode e deve carregar o ID gerado pelo
+writer, o que preserva rastreabilidade e permite deduplicação.
+
+Duas premissas caíram nessa verificação, e ficam registradas em vez de
+apagadas:
+
+1. **"Existe uma `SEQ_LOG` no Projudi."** Não existe. A `PROJUDI.SEQ_LOG` que
+   aparece neste repositório é do **laboratório** — criada por
+   `infra/oracle/init/sql/40_pdb_tables.sql` e documentada na decisão 13 como
+   inexistente em produção. A sequence real chama-se **`LOG_ID_LOG_SEQ`**
+   (`BancoDeDados/01_CreateSequence.sql`, `START WITH 104620234`).
+
+2. **"A geração atual é `MAX(ID_LOG)+1`."** O caminho ordinário é
+   `LOG_ID_LOG_SEQ.NEXTVAL`. O `MAX+1` existe no trigger, mas dentro de um ramo
+   que só executa `IF v_newVal = 1` — um *bootstrap* para o caso de a sequence
+   ter acabado de ser criada. Com `START WITH 104620234`, esse ramo é
+   inalcançável na prática.
+
+A segunda premissa é a mais instrutiva: `MAX+1` está mesmo escrito no código, e
+uma leitura rápida do trigger a confirmaria. É preciso ler a condição que o
+protege para ver que ele nunca roda. A conclusão prática não muda — o ID
+explícito é seguro nos dois casos — mas a razão pela qual é seguro é outra.
+
+---
+
+## 21. Feature flag de três estados
+
+**Escolhido:** `ORACLE | CLICKHOUSE | AMBOS`, com **`ORACLE` como padrão**.
+Subir o jar no classpath sem configurar nada não muda comportamento nenhum;
+ligar a Solução 1 é um ato explícito.
+
+O modo `AMBOS` existe para o período de sombra em homologação: os dois destinos
+recebem o mesmo registro, com o **mesmo `ID_LOG`**, o que permite comparar
+Oracle e ClickHouse linha a linha por chave, e não por amostragem. Numa
+migração de log de auditoria, essa comparação é a evidência que justifica
+desligar o destino antigo.
+
+**Divisão de responsabilidade no modo `AMBOS`:** a biblioteca grava apenas no
+ClickHouse; a cópia no Oracle é feita pela própria `LogPs`, executando o mesmo
+código que executa hoje. Não é preguiça de composição — é o que mantém a cópia
+Oracle dentro da transação de negócio, como sempre foi, e garante que o modo
+sombra compare o ClickHouse contra o comportamento **real** de produção, e não
+contra uma reimplementação dele. Daí o método `LogDestino.gravaNoOracle()`, que
+a `LogPs` consulta para decidir se cai no caminho legado depois de chamar o
+writer.
+
+Para a comparação fechar por chave, o INSERT legado precisa passar a incluir
+`ID_LOG` com o valor devolvido pelo writer — seguro pelo que ficou estabelecido
+na decisão 20.
+
+O `CompositeLogSink` existe para o laboratório e o benchmark, onde não há
+`LogPs` e o `OracleLogSink` é autossuficiente.
+
+---
+
+## 22. `ojdbc8` no benchmark, não `ojdbc11`
+
+A decisão 1 fixou `ojdbc11:23.8.0.25.04` para a imagem do Kafka Connect. No
+`log-writer` isso **não serve**: o `ojdbc11` exige JDK 11, e este módulo compila
+e roda em Java 8 (decisão 14).
+
+**Escolhido:** `com.oracle.database.jdbc:ojdbc8:23.5.0.24.07`, a última linha
+publicada para JDK 8, em **escopo `test`**. O Connect continua com o `ojdbc11`;
+são classpaths independentes.
+
+O escopo `test` é possível porque **nada em `src/main` importa classes da
+Oracle** — o `OracleLogSink` usa só `java.sql`. O driver é necessário apenas
+para o grupo de controle do benchmark e para o teste de integração, e não entra
+no jar que vai para o Projudi.
+
+---
+
+## 23. Testabilidade sem banco: `ConexaoSupplier` e proxy dinâmico
+
+Requisito da frente: `mvn test` verde sem ClickHouse nem Oracle de pé.
+
+A costura é a interface `ConexaoSupplier`, que os sinks recebem no construtor em
+vez de chamarem `DriverManager` diretamente. O teste injeta um `JdbcFalso` que
+monta `Connection` e `PreparedStatement` com `java.lang.reflect.Proxy` e
+registra cada `setXxx(indice, valor)`.
+
+Por que proxy dinâmico e não uma classe de mentira escrita à mão: implementar
+`PreparedStatement` exige mais de 50 métodos vazios, e cada novo método na
+interface entre versões do JDBC quebraria a compilação. O proxy registra tudo em
+poucas linhas e é indiferente a isso.
+
+O ganho não é só de conveniência — permite verificar o que realmente importa
+sem banco: o SQL exato, a **ordem** das 13 colunas, o **tipo** de cada ligação
+(`setTimestamp` na `DATA` do ClickHouse contra `setDate` na `DATA` do Oracle,
+que é a diferença real entre os dois destinos), e que os CLOBs saem idênticos ao
+que entrou.
+
+Como efeito colateral, o `ConexaoSupplier` é também o ponto de extensão para o
+Projudi usar o pool que já existe lá (`FabricaConexao`) em vez do
+`DriverManager`, se um dia a gravação de log passar a compartilhar pool com o
+resto da aplicação.
+
+---
+
+## 24. Resolução do `ID_LOG_TIPO` no ClickHouse, não no Oracle
+
+A `LogPs.inserir` tem dois caminhos para essa coluna: ou a `LogDt` traz o
+`ID_LOG_TIPO`, ou o INSERT resolve na hora com um subselect —
+`(SELECT MAX(ID_LOG_TIPO) FROM PROJUDI.LOG_TIPO WHERE LOG_TIPO_CODIGO = ?)`
+(`LogPs.java:71-75`). O segundo é o caminho comum: a maioria dos chamadores
+constrói a `LogDt` com `logTipoCodigo`, não com o id.
+
+**Escolhido:** resolver contra a dimensão `projudi_logs.log_tipo` **do
+ClickHouse**, com cache em memória. Manter o subselect no Oracle significaria
+uma ida ao banco transacional a cada log — exatamente o que a Solução 1 existe
+para eliminar. A dimensão já é espelhada no ClickHouse (decisão 13) e muda
+raramente.
+
+Cache sem expiração e sem limite de tamanho, de propósito: são algumas dezenas
+de linhas (a sequence de produção está em 44) e a tabela é recarregada por
+inteiro quando muda. Um *miss* **não** é cacheado — a dimensão pode ser
+recarregada sem restart, e insistir num zero cacheado transformaria um atraso de
+carga em dano permanente aos registros daquele tipo.
+
+Código desconhecido grava `ID_LOG_TIPO = 0` e incrementa um contador, em vez de
+falhar: um tipo de log novo não é motivo para perder o registro de auditoria
+inteiro, e o zero fica detectável por consulta.
