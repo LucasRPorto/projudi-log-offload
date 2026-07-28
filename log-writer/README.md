@@ -39,6 +39,19 @@ cd log-writer
 mvn test -Dclickhouse.integracao=true
 ```
 
+> **Use `make up-lite`, não `make up`.** Numa máquina apertada, subir a pilha
+> completa faz o ClickHouse dividir CPU e memória com Oracle, Kafka, Connect e
+> Kafka UI. O resultado é `Read timed out` no meio dos lotes — e aí o teste
+> mede a máquina, não o código. Numa execução de 8 GB com tudo no ar, a suíte
+> levou 9 minutos e acusou perda de registros que nunca houve.
+>
+> Folgas disponíveis, se ainda apertar:
+>
+> | Propriedade | Padrão | Para quê |
+> |---|---|---|
+> | `-Dintegracao.registros` | `500` | volume do teste de fila |
+> | `-Dclickhouse.url` | `jdbc:ch://localhost:8123/projudi_logs` | os tempos-limite sobem para 60 s automaticamente quando a URL não traz `?` |
+
 **Esperado:** `Tests run: 68, Failures: 0, Errors: 0, Skipped: 0` — os 4 testes
 hoje pulados passam a executar. Se continuarem em `Skipped`, a propriedade não
 chegou ao surefire e nada foi testado.
