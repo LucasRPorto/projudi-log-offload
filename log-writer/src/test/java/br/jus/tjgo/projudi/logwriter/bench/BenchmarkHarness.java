@@ -317,13 +317,16 @@ public final class BenchmarkHarness {
         } catch (SQLException e) {
             System.out.println("  " + nome + ": INDISPONÍVEL — " + e.getMessage());
             return false;
+        } catch (LogWriterException e) {
+            System.out.println("  " + nome + ": INDISPONÍVEL — " + e.getMessage());
+            return false;
         } finally {
             fechar(st);
             fechar(cx);
         }
     }
 
-    private static void executar(ConexaoSupplier conexoes, String sql) throws SQLException {
+    private static void executar(ConexaoSupplier conexoes, String sql) throws Exception {
         Connection cx = null;
         Statement st = null;
         try {
@@ -345,7 +348,7 @@ public final class BenchmarkHarness {
             st = cx.createStatement();
             rs = st.executeQuery(sql);
             return rs.next() ? rs.getLong(1) : -1L;
-        } catch (SQLException e) {
+        } catch (Exception e) {
             return -1L;
         } finally {
             fechar(rs);

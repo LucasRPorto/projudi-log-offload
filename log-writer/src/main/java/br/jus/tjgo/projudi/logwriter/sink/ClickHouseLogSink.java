@@ -161,7 +161,7 @@ public final class ClickHouseLogSink implements LogSink {
         }
     }
 
-    private Connection conexaoAtiva() throws SQLException {
+    private Connection conexaoAtiva() throws SQLException, LogWriterException {
         if (conexao == null || conexao.isClosed()) {
             conexao = conexoes.obter();
         }

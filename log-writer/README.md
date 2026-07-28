@@ -14,10 +14,14 @@ exatamente igual, e o formato dos CLOBs é preservado byte a byte, sem parsing.
 
 > **`mvn test` verde NÃO significa integração validada.**
 >
-> Os 50 testes unitários rodam sem ClickHouse e sem Oracle de pé, por desenho
+> Os 57 testes unitários rodam sem ClickHouse e sem Oracle de pé, por desenho
 > (decisão 23). Eles provam o SQL, a ordem das colunas, o tipo de cada ligação
 > de parâmetro e todo o comportamento de fila, lote e fallback — mas **nenhuma
-> linha desta biblioteca jamais tocou um banco real**.
+> linha desta biblioteca jamais gravou num banco real**.
+>
+> A primeira tentativa de execução real, em 2026-07-28, cobrou isso na hora: o
+> driver do ClickHouse nem carregava, por falta de `slf4j-api` no classpath
+> (decisão 25). A conexão agora abre, mas a gravação continua sem prova.
 
 A implementação foi feita numa máquina sem Docker (ver `docs/ambientes.md`,
 seção 1). Os três itens abaixo continuam **sem execução** e são pré-requisito
@@ -35,9 +39,15 @@ cd log-writer
 mvn test -Dclickhouse.integracao=true
 ```
 
-**Esperado:** `Tests run: 54, Failures: 0, Errors: 0, Skipped: 0` — os 4 testes
+**Esperado:** `Tests run: 61, Failures: 0, Errors: 0, Skipped: 0` — os 4 testes
 hoje pulados passam a executar. Se continuarem em `Skipped`, a propriedade não
 chegou ao surefire e nada foi testado.
+
+**Já verificado nesta frente:** a conexão abre. O erro
+`No suitable driver found for jdbc:ch://…` que aparecia aqui era falta de
+`slf4j-api`, corrigida na decisão 25, e está coberta por `ConexaoSupplierTest`.
+O que continua sem prova é a **gravação**: ida e volta dos payloads, integridade
+byte a byte e as 13 colunas.
 
 ### 2. `OracleLogSink` contra um Oracle real
 
@@ -118,8 +128,15 @@ Antes de qualquer decisão de API, o código real
 ```
 
 Traz junto apenas o `clickhouse-jdbc:0.7.2` com classificador `all` (uber jar
-sombreado, sem transitivas). Nada mais. Sem Spring, sem SLF4J — o log interno
-usa `java.util.logging`, que já está no JDK.
+sombreado, sem transitivas). Sem Spring. O log **desta biblioteca** usa
+`java.util.logging`, que já está no JDK.
+
+> **`slf4j-api` precisa estar no classpath**, mesmo sem nenhuma classe nossa
+> importá-la: o uber jar do ClickHouse não a empacota e o `<clinit>` do driver
+> depende dela. No Projudi isso já está resolvido — `slf4j-api:1.7.25` está em
+> `WEB-INF/lib`. Por isso a dependência é declarada em escopo `provided`: ela
+> não é exportada para o WAR e não arrisca uma segunda versão no classpath.
+> Ver decisão 25.
 
 ### A alteração na LogPs
 
@@ -291,8 +308,8 @@ IdGerador.sequenciaDe(id);  // 0..4095
 mvn test
 ```
 
-50 testes unitários, **sem depender de ClickHouse nem de Oracle de pé** — e,
-pela mesma razão, sem provar nada sobre a integração real (ver "Pendências de
+57 testes unitários, **sem depender de ClickHouse nem de Oracle de pé** — e,
+pela mesma razão, sem provar nada sobre a gravação real (ver "Pendências de
 validação"). A
 costura que permite isso é o `ConexaoSupplier`: o `JdbcFalso` (em
 `src/test/.../apoio/`) monta `Connection` e `PreparedStatement` com

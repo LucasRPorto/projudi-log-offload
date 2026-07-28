@@ -333,6 +333,13 @@ classpath do Projudi é grande e antigo, e o risco de conflito de versão de
 biblioteca comum (HTTP client, JSON) é real. O jar sombreado elimina a classe
 inteira de problema.
 
+> **Corrigido em 2026-07-28, na primeira execução real.** A exclusão de *todas*
+> as transitivas está certa no motivo e era larga demais no alcance: o uber jar
+> `all` não empacota o `org.slf4j`, e sem ele o `<clinit>` do
+> `ClickHouseDriver` morre com `NoClassDefFoundError` — que o `DriverManager`
+> engole, devolvendo `No suitable driver found`. Foi acrescentado
+> `org.slf4j:slf4j-api` em escopo `provided`. Ver decisão 25.
+
 ---
 
 ## 15. `.env` na raiz, compose em `infra/`
@@ -865,3 +872,136 @@ carga em dano permanente aos registros daquele tipo.
 Código desconhecido grava `ID_LOG_TIPO = 0` e incrementa um contador, em vez de
 falhar: um tipo de log novo não é motivo para perder o registro de auditoria
 inteiro, e o zero fica detectável por consulta.
+
+---
+
+## 25. `slf4j-api` é obrigatório, e o driver do ClickHouse falha em silêncio sem ele
+
+Erro de construção descoberto em 2026-07-28, na **primeira execução do teste de
+integração num computador com Docker**. A verificação estática e os 50 testes
+unitários não o pegaram, pela mesma razão de sempre: só se manifesta quando
+alguém tenta abrir uma conexão de verdade.
+
+**O sintoma:**
+
+```
+java.sql.SQLException: No suitable driver found for jdbc:ch://localhost:8123/projudi_logs
+```
+
+com o `clickhouse-jdbc` presente e visível no `mvn dependency:tree`.
+
+### Três hipóteses, duas erradas
+
+| Hipótese | Verificação | Veredito |
+|---|---|---|
+| Dependência ausente ou escopo errado | `dependency:build-classpath` mostra o `clickhouse-jdbc-0.7.2-all.jar` no classpath de teste | ❌ |
+| O `META-INF/services/java.sql.Driver` não sobrevive ao shade | `unzip -p …-all.jar META-INF/services/java.sql.Driver` imprime `com.clickhouse.jdbc.ClickHouseDriver` e `com.clickhouse.jdbc.Driver`; as classes estão nos pacotes originais | ❌ |
+| O `<clinit>` do driver falha | `Class.forName("com.clickhouse.jdbc.ClickHouseDriver")` num `main` isolado, com o mesmo classpath | ✅ |
+
+A terceira devolveu a causa:
+
+```
+java.lang.NoClassDefFoundError: org/slf4j/LoggerFactory
+  causa: java.lang.ClassNotFoundException: org.slf4j.LoggerFactory
+  at com.clickhouse.jdbc.ClickHouseDriver.<clinit>(ClickHouseDriver.java:13)
+```
+
+### A causa
+
+O uber jar `all` **não empacota o `org.slf4j`**. Ele traz
+`com/clickhouse/logging/Slf4jLogger.class`, que *referencia* a API, e o próprio
+`clickhouse-jdbc-0.7.2.pom` declara `slf4j-api` como exclusão em cada uma de
+suas dependências — ou seja, o driver espera que o **ambiente** forneça a API de
+log. É uma escolha razoável para uma biblioteca: a fachada de log é do
+integrador, não dela.
+
+A decisão 14 excluiu **todas** as transitivas do artefato `all`
+(`<exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion>`) para
+garantir que nenhuma versão não sombreada voltasse pelo Maven. A exclusão está
+certa no motivo e larga demais no alcance: levou junto a única coisa que o uber
+jar realmente precisava receber de fora.
+
+### Por que o sintoma apontava para o lugar errado
+
+Esta é a parte que vale para o relatório.
+
+O `DriverManager` carrega os drivers por SPI dentro de um laço que **captura e
+descarta `Throwable`**. Um provedor cujo inicializador estático explode é
+simplesmente pulado, sem log e sem rastro. O resultado é que um
+`NoClassDefFoundError` de uma classe de *logging* se apresenta como
+`No suitable driver found for jdbc:ch://…` — uma mensagem que aponta para a URL,
+depois para a dependência, e nunca para a classe que faltou.
+
+Some-se a isso que o `DriverManager` faz essa varredura **uma única vez**, no
+próprio inicializador estático, com o *context classloader* daquele instante:
+sob Surefire e sob `exec:java`, que montam classloaders próprios, um driver
+carregado depois nunca entra por SPI.
+
+### Correção, em duas partes
+
+**1. A dependência que faltava** (`log-writer/pom.xml`):
+
+```xml
+<dependency>
+    <groupId>org.slf4j</groupId>
+    <artifactId>slf4j-api</artifactId>
+    <version>1.7.25</version>
+    <scope>provided</scope>
+</dependency>
+```
+
+Escopo `provided`, não `compile`, por dois motivos:
+
+- o Projudi **já** tem `org.slf4j:slf4j-api:1.7.25` em `WEB-INF/lib` (verificado
+  no `pom.xml` daquele repositório e no artefato construído). Exportar a
+  dependência arriscaria duas versões no mesmo classpath — exatamente o que a
+  decisão 14 quer evitar;
+- `provided` está presente na compilação e nos testes deste módulo, que é onde o
+  driver precisa carregar por conta própria.
+
+Consequência a registrar: **dentro do Projudi o driver carregaria normalmente**,
+porque o slf4j já está lá. A falha era específica do classpath isolado do
+`log-writer` — o que explica por que ela só apareceu ao rodar o teste de
+integração, e não ao pensar na integração com a aplicação.
+
+Versão fixada em 1.7.25, a mesma do Projudi, para que o teste exercite o que a
+produção vai fornecer.
+
+**2. Registro explícito do driver** (`ConexaoSupplier.DoDriverManager`):
+
+Um bloco estático carrega `com.clickhouse.jdbc.ClickHouseDriver` e
+`oracle.jdbc.OracleDriver` por `Class.forName`, em melhor esforço, guardando o
+motivo de cada falha. Quando alguém pede uma conexão para uma URL cujo driver
+não carregou, sai uma `LogWriterException` que nomeia a classe, a URL, o
+artefato Maven **e a causa raiz** — em vez do `No suitable driver found`.
+
+Isso não é redundância em relação à parte 1. São coisas diferentes:
+
+- a parte 1 conserta **este** problema;
+- a parte 2 garante que o **próximo** problema desse tipo se apresente com o
+  nome certo. Qualquer falha de inicialização de driver — conflito de versão,
+  outra classe ausente, jar corrompido — deixa de ser engolida pelo laço do SPI.
+
+A carga é por tentativa, nunca exigência: este supplier atende ClickHouse e
+Oracle, e o `ojdbc8` está em escopo `test`. Exigir os dois na inicialização
+quebraria o uso normal da biblioteca dentro do Projudi, onde só o ClickHouse
+importa.
+
+### Cobertura de teste
+
+`ConexaoSupplierTest` fixa a regressão **sem ClickHouse no ar**: verifica que,
+depois de tocar o `DoDriverManager`, existe no `DriverManager` um driver que
+aceita `jdbc:ch://…` e `jdbc:clickhouse://…`, e que uma tentativa de conexão
+contra uma porta fechada falha por *conexão*, não por driver ausente. Os sete
+testes falhavam antes da correção e passam depois — a falha foi reproduzida na
+máquina sem Docker, o que era a única forma de tratá-la com o ciclo curto.
+
+### O padrão, pela terceira vez
+
+É a terceira suposição deste trabalho que sobrevive à revisão estática e cai na
+primeira execução real, junto com as variáveis `ENABLE_ARCHIVELOG` que a imagem
+nunca lê (decisão 5) e os datafiles com caminho relativo (decisão 18). As três
+têm a mesma forma: **o artefato estava correto pelo que dava para inspecionar, e
+errado pelo que só o ambiente sabe**. A diferença aqui é o agravante de a
+plataforma ter engolido o erro — não bastava executar, era preciso executar e
+não acreditar na mensagem.

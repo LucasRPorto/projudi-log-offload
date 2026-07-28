@@ -173,7 +173,7 @@ public final class OracleLogSink implements LogSink {
         }
     }
 
-    private Connection conexaoAtiva() throws SQLException {
+    private Connection conexaoAtiva() throws SQLException, LogWriterException {
         if (conexao == null || conexao.isClosed()) {
             conexao = conexoes.obter();
             conexao.setAutoCommit(false);

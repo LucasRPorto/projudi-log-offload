@@ -8,6 +8,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import br.jus.tjgo.projudi.logwriter.ConexaoSupplier;
+import br.jus.tjgo.projudi.logwriter.LogWriterException;
 
 /**
  * Resolve o {@code ID_LOG_TIPO} contra a dimensão
@@ -58,6 +59,13 @@ public final class ClickHouseLogTipoResolver implements LogTipoResolver {
             return 0L;
         } catch (SQLException e) {
             // Falha na dimensão não pode custar o registro de auditoria.
+            LOG.log(Level.WARNING,
+                    "Não foi possível resolver LOG_TIPO_CODIGO=" + logTipoCodigo
+                            + "; o registro será gravado com ID_LOG_TIPO=0", e);
+            return 0L;
+        } catch (LogWriterException e) {
+            // Driver ausente no classpath. Mesmo tratamento: a dimensão é
+            // acessório, o registro de auditoria não.
             LOG.log(Level.WARNING,
                     "Não foi possível resolver LOG_TIPO_CODIGO=" + logTipoCodigo
                             + "; o registro será gravado com ID_LOG_TIPO=0", e);

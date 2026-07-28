@@ -183,7 +183,7 @@ duplicar infraestrutura.
 | Frente | Escopo | Estado |
 |---|---|---|
 | **A — Infraestrutura** | Docker Compose, DDLs, preparação do Oracle, scripts, validação | esta sessão |
-| **B — `log-writer`** | Cliente JDBC Java 8 que a `LogPs` vai chamar; batching, tratamento de falha, benchmark contra o Oracle | implementado, 50 testes unitários verdes; integração e benchmark aguardam ambiente |
+| **B — `log-writer`** | Cliente JDBC Java 8 que a `LogPs` vai chamar; batching, tratamento de falha, benchmark contra o Oracle | implementado, 57 testes unitários verdes; conexão real já validada, gravação e benchmark aguardam ambiente |
 | **C — Pipeline CDC** | Ajuste fino do conector, validação fim a fim, medição de latência e de completude | infra pronta, `connector-proc.json` é template |
 
 A Frente A entrega o ambiente de pé e validado. B e C começam sem tocar em

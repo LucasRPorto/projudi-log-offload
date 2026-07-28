@@ -51,6 +51,8 @@
           classes da Oracle — o OracleLogSink usa só java.sql.
         -->
         <ojdbc8.version>23.5.0.24.07</ojdbc8.version>
+        <!-- Mesma versão que o Projudi carrega em WEB-INF/lib. Ver a dependência. -->
+        <slf4j.version>1.7.25</slf4j.version>
         <junit.version>5.11.4</junit.version>
         <surefire.version>3.2.5</surefire.version>
         <exec.plugin.version>3.5.0</exec.plugin.version>
@@ -74,6 +76,36 @@
                     <artifactId>*</artifactId>
                 </exclusion>
             </exclusions>
+        </dependency>
+
+        <!--
+          slf4j-api NÃO é opcional, apesar de nenhuma classe nossa importá-la.
+
+          O uber jar "all" do clickhouse-jdbc não empacota o org.slf4j: ele traz
+          apenas com/clickhouse/logging/Slf4jLogger.class, que o referencia, e o
+          próprio pom do driver exclui slf4j-api das suas transitivas, esperando
+          que o ambiente forneça. Com a exclusão *:* acima, nada fornecia, e o
+          <clinit> de com.clickhouse.jdbc.ClickHouseDriver morria com
+          NoClassDefFoundError: org/slf4j/LoggerFactory. O DriverManager engole
+          esse erro dentro do laço de carga do ServiceLoader, e o sintoma que
+          chega ao usuário é "No suitable driver found for jdbc:ch://…" —
+          apontando para a URL quando o problema é uma classe ausente.
+
+          Escopo `provided`, e não `compile`, por dois motivos:
+            - o Projudi JÁ tem org.slf4j:slf4j-api:1.7.25 no WEB-INF/lib, então
+              exportar a dependência arriscaria duas versões no mesmo classpath,
+              que é exatamente o que a decisão 14 quer evitar;
+            - `provided` está presente na compilação e nos testes deste módulo,
+              que é onde o driver precisa carregar sozinho.
+
+          Versão fixada na mesma que o Projudi usa, para que o teste exercite o
+          que a produção vai fornecer.
+        -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+            <version>${slf4j.version}</version>
+            <scope>provided</scope>
         </dependency>
 
         <dependency>

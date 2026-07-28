@@ -296,7 +296,7 @@ class ClickHouseIntegracaoIT {
     // -------------------------------------------------------------------------
 
     /** @return {@code {VALOR_ATUAL, VALOR_NOVO}} ou {@code null} se não achou. */
-    private String[] lerValores(long idLog) throws SQLException {
+    private String[] lerValores(long idLog) throws Exception {
         Connection cx = conexoes.obter();
         try {
             PreparedStatement ps = cx.prepareStatement(
@@ -320,7 +320,7 @@ class ClickHouseIntegracaoIT {
         }
     }
 
-    private void executar(String sql) throws SQLException {
+    private void executar(String sql) throws Exception {
         Connection cx = conexoes.obter();
         try {
             Statement st = cx.createStatement();
