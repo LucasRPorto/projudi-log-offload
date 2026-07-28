@@ -42,8 +42,18 @@
         <maven.compiler.target>${java.version}</maven.compiler.target>
 
         <clickhouse-jdbc.version>0.7.2</clickhouse-jdbc.version>
+        <!--
+          ojdbc8 e não ojdbc11: o ojdbc11 exige JDK 11, e este módulo compila e
+          roda em Java 8. A linha 23.5.0.24.07 é a última publicada para JDK 8,
+          e fala com o Oracle Free 23ai do compose sem ressalva.
+          Escopo test: o driver só é necessário para o grupo de controle do
+          benchmark e para o teste de integração. Nada em src/main importa
+          classes da Oracle — o OracleLogSink usa só java.sql.
+        -->
+        <ojdbc8.version>23.5.0.24.07</ojdbc8.version>
         <junit.version>5.11.4</junit.version>
         <surefire.version>3.2.5</surefire.version>
+        <exec.plugin.version>3.5.0</exec.plugin.version>
     </properties>
 
     <dependencies>
@@ -67,6 +77,13 @@
         </dependency>
 
         <dependency>
+            <groupId>com.oracle.database.jdbc</groupId>
+            <artifactId>ojdbc8</artifactId>
+            <version>${ojdbc8.version}</version>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
             <version>${junit.version}</version>
@@ -82,12 +99,86 @@
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.13.0</version>
             </plugin>
+
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>${surefire.version}</version>
+                <configuration>
+                    <!--
+                      `mvn test` roda só os testes unitários e não pode depender
+                      de banco nenhum. O teste de integração real vive na classe
+                      *IT e se habilita sozinho quando a propriedade
+                      clickhouse.integracao=true é passada (JUnit 5
+                      @EnabledIfSystemProperty); sem ela, é pulado, não falha.
+                      A propriedade é repassada à JVM de teste aqui.
+                    -->
+                    <systemPropertyVariables>
+                        <clickhouse.integracao>${clickhouse.integracao}</clickhouse.integracao>
+                        <oracle.integracao>${oracle.integracao}</oracle.integracao>
+                    </systemPropertyVariables>
+                    <!--
+                      As classes *IT não entram no padrão padrão do surefire
+                      (*Test, Test*, *Tests, *TestCase). Sem incluí-las aqui,
+                      passar -Dclickhouse.integracao=true não teria efeito
+                      nenhum: a classe simplesmente não seria executada, e o
+                      build ficaria verde sem ter testado nada.
+                    -->
+                    <includes>
+                        <include>**/Test*.java</include>
+                        <include>**/*Test.java</include>
+                        <include>**/*Tests.java</include>
+                        <include>**/*TestCase.java</include>
+                        <include>**/*IT.java</include>
+                    </includes>
+                    <!-- Os payloads reais têm acentuação; sem isto, o teste de
+                         integridade byte a byte falharia pelo motivo errado. -->
+                    <argLine>-Dfile.encoding=UTF-8</argLine>
+                </configuration>
+            </plugin>
+
+            <!--
+              Harness de benchmark. Roda com:
+                mvn -q test-compile exec:java@bench -Dbench.n=10000 -Dbench.lote=500
+              classpathScope=test porque o harness mora em src/test/java, junto
+              com o driver Oracle do grupo de controle.
+            -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>${exec.plugin.version}</version>
+                <executions>
+                    <execution>
+                        <id>bench</id>
+                        <goals>
+                            <goal>java</goal>
+                        </goals>
+                        <configuration>
+                            <mainClass>br.jus.tjgo.projudi.logwriter.bench.BenchmarkHarness</mainClass>
+                            <classpathScope>test</classpathScope>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <!--
+          Valores padrão das flags de integração. Ficam vazios para que
+          @EnabledIfSystemProperty não case e os testes de integração sejam
+          pulados no `mvn test` normal.
+        -->
+        <profile>
+            <id>padrao-sem-integracao</id>
+            <activation>
+                <activeByDefault>true</activeByDefault>
+            </activation>
+            <properties>
+                <clickhouse.integracao>false</clickhouse.integracao>
+                <oracle.integracao>false</oracle.integracao>
+            </properties>
+        </profile>
+    </profiles>
 
 </project>
