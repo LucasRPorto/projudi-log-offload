@@ -690,7 +690,13 @@ colisão não é impossível. Testes cobrem unicidade entre dois workers no mesm
 milissegundo e o comportamento definido no estouro dos 4096 slots (espera o
 milissegundo seguinte; nunca reutiliza).
 
-### Verificação da numeração atual — correção de duas premissas
+### Verificação da numeração atual — correção em dois sentidos
+
+Esta subseção registra um erro corrigido durante a decisão. **Fica aqui de
+propósito**, como as decisões 5 e 18: o histórico da correção vale mais que uma
+decisão que finge ter nascido certa, e o caso é material de metodologia — mostra
+que "ler o código" e "ler a condição que protege o código" são coisas
+diferentes.
 
 A pergunta feita antes de implementar foi: gravar um ID explícito na
 `PROJUDI.LOG` pelo fallback quebra a numeração legada?
@@ -714,25 +720,51 @@ Ele **só atribui quando o ID vem `NULL`**. Um ID preenchido não é sobrescrito
 numeração dos inserts legados. O fallback pode e deve carregar o ID gerado pelo
 writer, o que preserva rastreabilidade e permite deduplicação.
 
-Duas premissas caíram nessa verificação, e ficam registradas em vez de
-apagadas:
+Três afirmações caíram nessa verificação, em dois sentidos. Ficam registradas em
+vez de apagadas:
 
-1. **"Existe uma `SEQ_LOG` no Projudi."** Não existe. A `PROJUDI.SEQ_LOG` que
-   aparece neste repositório é do **laboratório** — criada por
-   `infra/oracle/init/sql/40_pdb_tables.sql` e documentada na decisão 13 como
-   inexistente em produção. A sequence real chama-se **`LOG_ID_LOG_SEQ`**
-   (`BancoDeDados/01_CreateSequence.sql`, `START WITH 104620234`).
+1. **Erro de origem: "usar a `PROJUDI.SEQ_LOG` do Projudi" foi oferecido como
+   alternativa.** Essa sequence não é de produção. A `PROJUDI.SEQ_LOG` é do
+   **laboratório** — criada por `infra/oracle/init/sql/40_pdb_tables.sql` e
+   documentada na decisão 13 como inexistente no schema real. Apontar um objeto
+   de banco de produção que não existe, num trabalho que vai a banca, é o tipo
+   de afirmação que precisa ser verificada antes, não corrigida depois.
 
-2. **"A geração atual é `MAX(ID_LOG)+1`."** O caminho ordinário é
-   `LOG_ID_LOG_SEQ.NEXTVAL`. O `MAX+1` existe no trigger, mas dentro de um ramo
-   que só executa `IF v_newVal = 1` — um *bootstrap* para o caso de a sequence
-   ter acabado de ser criada. Com `START WITH 104620234`, esse ramo é
-   inalcançável na prática.
+2. **Correção da correção: existe, sim, uma sequence — só não com aquele nome.**
+   A premissa que substituiu o erro acima foi "não existe sequence; a geração é
+   trigger com `MAX(ID_LOG)+1`". A primeira metade é verdadeira apenas quanto ao
+   **nome** `SEQ_LOG`. O objeto real é
+   **`PROJUDI.LOG_ID_LOG_SEQ`** — `BancoDeDados/01_CreateSequence.sql:473`,
+   `START WITH 104620234 NOCACHE NOORDER NOCYCLE`.
 
-A segunda premissa é a mais instrutiva: `MAX+1` está mesmo escrito no código, e
-uma leitura rápida do trigger a confirmaria. É preciso ler a condição que o
-protege para ver que ele nunca roda. A conclusão prática não muda — o ID
-explícito é seguro nos dois casos — mas a razão pela qual é seguro é outra.
+3. **O `MAX+1` é um ramo de *bootstrap*, inalcançável.** O caminho ordinário é
+   `LOG_ID_LOG_SEQ.NEXTVAL`. O `MAX(ID_LOG)+1` está mesmo escrito no trigger,
+   mas dentro de `IF v_newVal = 1` — previsto para o caso de a sequence ter
+   acabado de ser criada e ainda estar em 1. Com `START WITH 104620234`, esse
+   ramo nunca executa.
+
+O item 3 é o mais instrutivo, e o motivo de esta subseção existir: `MAX+1` está
+literalmente no código, e uma leitura rápida do trigger *confirmaria* a
+premissa. É preciso ler a **condição que protege o bloco** para ver que ele não
+roda. Ler o código e ler a guarda do código não são a mesma coisa.
+
+### O que isso muda na decisão
+
+**Nada.** A escolha do Snowflake não se apoiava na ausência de uma sequence; ela
+se apoia nas razões listadas acima — zero round-trip, monotonicidade, faixa
+disjunta, contrato do `setId(...)` e idempotência do reenvio de lote — e todas
+seguem válidas com a `LOG_ID_LOG_SEQ` existindo. A rejeição de "usar a sequence
+do Oracle" também não muda de motivo: ela cai por **reintroduzir a ida ao banco
+transacional na escrita**, não por a sequence não existir.
+
+O que muda é a **razão pela qual gravar o ID explícito é seguro**. A preocupação
+levantada era que um ID Snowflake gravado na `LOG` empurraria o `MAX` e
+quebraria a numeração dos inserts legados. Isso valeria se a geração fosse
+`MAX+1`. Como é `NEXTVAL`, **a sequence é independente do `MAX(ID_LOG)` da
+tabela**: gravar um valor na casa de 10¹⁷ não a afeta, e um ID preenchido nem
+chega a consumir `NEXTVAL`, porque a guarda `IS NULL` impede a entrada no
+bloco. Seguro nos dois cenários — por motivos diferentes, e agora pelo motivo
+certo.
 
 ---
 

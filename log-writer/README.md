@@ -10,6 +10,86 @@ exatamente igual, e o formato dos CLOBs é preservado byte a byte, sem parsing.
 
 ---
 
+## Pendências de validação
+
+> **`mvn test` verde NÃO significa integração validada.**
+>
+> Os 50 testes unitários rodam sem ClickHouse e sem Oracle de pé, por desenho
+> (decisão 23). Eles provam o SQL, a ordem das colunas, o tipo de cada ligação
+> de parâmetro e todo o comportamento de fila, lote e fallback — mas **nenhuma
+> linha desta biblioteca jamais tocou um banco real**.
+
+A implementação foi feita numa máquina sem Docker (ver `docs/ambientes.md`,
+seção 1). Os três itens abaixo continuam **sem execução** e são pré-requisito
+para considerar a Frente B homologada — mesmo critério aplicado à Frente A, que
+só foi dada como concluída depois de `make validate` real (decisão 16).
+
+### 1. Teste de integração com o ClickHouse
+
+Grava e lê de volta os três formatos reais de payload, exigindo igualdade byte a
+byte em UTF-8. Roda com o ambiente reduzido, sem precisar do Oracle:
+
+```bash
+make up-lite                       # da raiz do repositório
+cd log-writer
+mvn test -Dclickhouse.integracao=true
+```
+
+**Esperado:** `Tests run: 54, Failures: 0, Errors: 0, Skipped: 0` — os 4 testes
+hoje pulados passam a executar. Se continuarem em `Skipped`, a propriedade não
+chegou ao surefire e nada foi testado.
+
+### 2. `OracleLogSink` contra um Oracle real
+
+É o item menos coberto. O SQL e a ligação de parâmetros estão verificados por
+teste unitário com `PreparedStatement` de proxy, mas o `TRUNCATE`, o
+`setAutoCommit(false)` e o `commit` por lote só se provam em execução — e é
+justamente esse sink que serve de **grupo de controle do benchmark**. Um erro
+aqui contamina o número comparativo, não só o caminho de fallback.
+
+Não há teste automatizado dedicado; a verificação sai da rodada do benchmark
+com o Oracle disponível (item 3), que exercita os três pontos e confere a
+completude ao final:
+
+```bash
+make up                            # precisa da pilha completa, não do up-lite
+cd log-writer
+mvn -q test-compile exec:java@bench -Dbench.n=2000 -Dbench.lotes=1,500
+```
+
+**Esperado:** na saída, `Oracle: disponível`, duas linhas `Oracle` na tabela de
+resultado, e `Oracle … linhas … IDs distintos … OK` na conferência de
+completude.
+
+### 3. Benchmark no ambiente de referência
+
+O número que vai para o relatório. **Tem que sair de um único ambiente**
+(`docs/ambientes.md`, seções 3 e 5) — metade aqui e metade em outra máquina
+produz resultados que não se combinam.
+
+```bash
+make up
+cd log-writer
+mvn -q test-compile exec:java@bench \
+    -Dbench.n=20000 \
+    -Dbench.lotes=1,100,500,2000 \
+    -Dbench.warmup=2000 \
+    -Dbench.repeticoes=5 \
+    -Dbench.saida=../validacao/evidencias/bench-$(date +%Y%m%d).txt
+```
+
+Registre no relatório as especificações da máquina — o cabeçalho da saída já as
+imprime — e versione o arquivo gerado em `validacao/evidencias/`.
+
+### Fora desta lista, porque é fase posterior
+
+A alteração na `LogPs` do `../projudi` está **documentada, não aplicada** (ver
+"A alteração na LogPs", abaixo). A validação funcional com o Projudi rodando no
+Eclipse é o teste **B.2** de `docs/ambientes.md`, seção 4, e depende do notebook
+do TJ-GO.
+
+---
+
 ## O que a leitura da LogPs estabeleceu
 
 Antes de qualquer decisão de API, o código real
@@ -211,13 +291,17 @@ IdGerador.sequenciaDe(id);  // 0..4095
 mvn test
 ```
 
-50 testes unitários, **sem depender de ClickHouse nem de Oracle de pé**. A
+50 testes unitários, **sem depender de ClickHouse nem de Oracle de pé** — e,
+pela mesma razão, sem provar nada sobre a integração real (ver "Pendências de
+validação"). A
 costura que permite isso é o `ConexaoSupplier`: o `JdbcFalso` (em
 `src/test/.../apoio/`) monta `Connection` e `PreparedStatement` com
 `java.lang.reflect.Proxy` e registra cada `setXxx`, então o SQL e a ligação de
 parâmetros são conferidos coluna a coluna sem banco.
 
 ### Teste de integração real
+
+**Ainda não executado** — ver "Pendências de validação", item 1.
 
 Pulado por padrão; roda com o ambiente de pé:
 
@@ -243,6 +327,10 @@ Credenciais: `-Dclickhouse.usuario=… -Dclickhouse.senha=…` (padrão: o
 
 Escreve N registros no **Oracle** e no **ClickHouse** do compose, no mesmo host
 e na mesma janela de tempo, e cronometra os dois.
+
+**Ainda não executado contra bancos reais** — ver "Pendências de validação",
+itens 2 e 3. O que já rodou foi apenas o modo seco (`bench.seco=true`), que
+exercita a invocação e o formato da saída sem tocar em banco nenhum.
 
 ```bash
 make up            # da raiz — precisa do Oracle, que é o grupo de controle
