@@ -128,6 +128,44 @@ class ClickHouseIntegracaoIT {
      * o teste falha do mesmo jeito, só que sessenta segundos depois e sem
      * ambiguidade sobre a causa.</p>
      */
+    /**
+     * Explica uma divergência de {@code HORA} em vez de só acusá-la.
+     *
+     * <p>A magnitude do desvio identifica a causa: um múltiplo exato de hora é
+     * fuso horário, e não perda de precisão. Isso importa muito além do teste —
+     * a {@code log_raw} particiona por {@code toYYYYMM(HORA)} e ordena por
+     * {@code (HORA, ID_USU, ID_LOG)}. Um deslocamento sistemático joga
+     * registros na partição errada e corrompe todo recorte por período, que é
+     * exatamente o que a auditoria consulta.</p>
+     */
+    static String diagnosticoDeHora(long epochEsperado, long epochGravado, long deltaSegundos) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("HORA voltou diferente do que foi gravada.\n")
+                .append("  esperado (epoch s): ").append(epochEsperado).append('\n')
+                .append("  gravado  (epoch s): ").append(epochGravado).append('\n')
+                .append("  delta .............: ").append(deltaSegundos).append(" s");
+
+        if (deltaSegundos != 0 && deltaSegundos % 3600L == 0L) {
+            sb.append(" = ").append(deltaSegundos / 3600L).append(" h EXATAS\n\n")
+                    .append("Múltiplo exato de hora é FUSO HORÁRIO, não precisão.\n")
+                    .append("O JVM daqui está em ").append(java.util.TimeZone.getDefault().getID())
+                    .append(" e o ClickHouse do container roda em UTC; o driver converte\n")
+                    .append("DateTime usando um fuso na ida e outro na volta.\n\n")
+                    .append("Isto NÃO é cosmético: a log_raw particiona por toYYYYMM(HORA) e\n")
+                    .append("ordena por (HORA, ID_USU, ID_LOG). Um desvio fixo joga registros na\n")
+                    .append("partição errada e desloca todo recorte por período da auditoria.\n\n")
+                    .append("Confirme o que está REALMENTE armazenado antes de qualquer conserto:\n")
+                    .append("  make ch\n")
+                    .append("  SELECT ID_LOG, HORA, toUnixTimestamp(HORA), timezone() FROM ")
+                    .append(TABELA).append(" ORDER BY HORA DESC LIMIT 5;\n");
+        } else if (deltaSegundos != 0) {
+            sb.append("\n\nO desvio não é múltiplo de hora, então não é fuso.\n")
+                    .append("Suspeitas: truncamento/arredondamento de fração de segundo, ou o\n")
+                    .append("registro lido não ser o que este teste gravou.\n");
+        }
+        return sb.toString();
+    }
+
     static String comTimeoutsGenerosos(String url) {
         if (url.indexOf('?') >= 0) {
             return url; // quem passou parâmetros manda
@@ -256,7 +294,13 @@ class ClickHouseIntegracaoIT {
         try {
             PreparedStatement ps = cx.prepareStatement(
                     "SELECT ID_LOG_TIPO, ID_USU, IP_COMPUTADOR, DATA, HORA, TABELA, "
-                            + "CODIGO_TEMP, ID_TABELA, HASH, QTD_ERROS_DIA "
+                            + "CODIGO_TEMP, ID_TABELA, HASH, QTD_ERROS_DIA, "
+                            // Verdade absoluta: DateTime no ClickHouse é um
+                            // UInt32 de segundos desde a época. Ler assim tira
+                            // do caminho a conversão de fuso que o driver faz
+                            // no getTimestamp — que é justamente a suspeita
+                            // quando a ida e a volta não batem.
+                            + "toUnixTimestamp(HORA) AS HORA_EPOCH "
                             + "FROM " + TABELA + " WHERE ID_LOG = ?");
             try {
                 ps.setLong(1, id);
@@ -271,8 +315,14 @@ class ClickHouseIntegracaoIT {
                     assertEquals(777888999L, rs.getLong("ID_TABELA"));
                     assertEquals("d41d8cd98f00b204e9800998ecf8427e", rs.getString("HASH").trim());
                     assertEquals(7, rs.getInt("QTD_ERROS_DIA"));
-                    assertEquals(hora.getTime() / 1000L, rs.getTimestamp("HORA").getTime() / 1000L,
-                            "HORA precisa voltar com a mesma precisão de segundo do DateTime");
+                    // O que importa para a auditoria é o INSTANTE armazenado,
+                    // não como o driver o formata na volta.
+                    long epochEsperado = hora.getTime() / 1000L;
+                    long epochGravado = rs.getLong("HORA_EPOCH");
+                    long deltaSegundos = epochGravado - epochEsperado;
+
+                    assertEquals(epochEsperado, epochGravado,
+                            diagnosticoDeHora(epochEsperado, epochGravado, deltaSegundos));
                 } finally {
                     rs.close();
                 }
