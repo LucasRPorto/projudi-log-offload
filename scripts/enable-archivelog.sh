@@ -158,9 +158,12 @@ ${C_BOLD}Pronto.${C_RESET} Confirme com:
 
   make validate        item 'f' deve passar sem avisos
 
-Lembrete operacional: com ARCHIVELOG ligado o Oracle acumula archived logs até
-encher a FRA. Num laboratório de vida curta não incomoda; se o ambiente ficar
-semanas de pé, limpe com RMAN (DELETE ARCHIVELOG ALL) ou aumente o
-db_recovery_file_dest_size.
+Lembrete operacional: com ARCHIVELOG ligado o Oracle acumula archived logs e
+NADA os apaga sozinho. Confira e limpe com:
+
+  make disco               quanto está ocupado, e onde
+  make limpar-archivelog   apaga o que tem mais de 1 h (preserva o CDC)
+
+Não use RMAN: ele não existe na imagem slim. Ver docs/decisoes.md, decisão 27.
 
 EOF

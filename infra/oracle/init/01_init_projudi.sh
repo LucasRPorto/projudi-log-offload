@@ -30,6 +30,9 @@ SYS_PWD="${ORACLE_PASSWORD:?ORACLE_PASSWORD nao definido pelo compose}"
 PROJUDI_PWD="${ORACLE_PROJUDI_PASSWORD:-projudi_dev}"
 DBZ_USER="${ORACLE_DBZ_USER:-c##dbzuser}"
 DBZ_PWD="${ORACLE_DBZ_PASSWORD:-dbz_dev}"
+FRA_SIZE="${ORACLE_FRA_SIZE:-4G}"
+# Dentro do volume oracle-data, nunca na camada gravavel do container.
+FRA_DEST="/opt/oracle/oradata/recovery_area"
 
 CDB="//localhost:1521/FREE"
 PDB="//localhost:1521/FREEPDB1"
@@ -118,6 +121,29 @@ if [ "${LOG_MODE}" != "ARCHIVELOG" ]; then
 
 EOW
 fi
+
+# -----------------------------------------------------------------------------
+# 0b) Fast Recovery Area: destino dentro do volume + teto explicito.
+#
+#     Medido em 2026-08-05: esta imagem sobe SEM FRA (db_recovery_file_dest
+#     nulo), e com ARCHIVELOG ligado os archived redo logs vao para
+#     $ORACLE_HOME/dbs/arch -- na camada gravavel do container, FORA do volume
+#     oracle-data. Dois problemas: eles somem quando o container e recriado
+#     (quebrando o Debezium com ORA-01291, mesma classe da decisao 18), e nao
+#     ha teto nenhum -- o arquivamento so para quando o disco do host acaba.
+#
+#     O teto nao impede o acumulo: troca "o host cai" por "o Oracle suspende
+#     as escritas", falha contida e legivel. A limpeza de verdade e
+#     `make limpar-archivelog`. Ver decisao 27.
+#
+#     Roda SEMPRE, inclusive quando o banco ja subiu em ARCHIVELOG.
+# -----------------------------------------------------------------------------
+#     O diretorio precisa existir ANTES do ALTER SYSTEM: o Oracle cria a
+#     estrutura interna da FRA (FREE/archivelog/<data>/), mas nao o diretorio
+#     base. E ele fica DENTRO do volume, nao na camada gravavel do container.
+log "preparando a FRA em ${FRA_DEST} (teto ${FRA_SIZE})"
+mkdir -p "${FRA_DEST}" || log "AVISO: nao foi possivel criar ${FRA_DEST}"
+run_sql "${CDB}" "${SQL_DIR}/06_fra_size.sql" "${FRA_SIZE}" "${FRA_DEST}"
 
 # -----------------------------------------------------------------------------
 # 1) Tablespace do LogMiner dentro do PDB.

@@ -142,6 +142,19 @@ logs até encher a FRA. Num ambiente de laboratório de vida curta isso não
 incomoda; se o ambiente ficar semanas de pé, é preciso limpar
 (`RMAN> DELETE ARCHIVELOG ALL;`) ou aumentar `db_recovery_file_dest_size`.
 
+> **O parágrafo acima está errado em dois dos três termos, e fica registrado
+> como estava.** Medido em 2026-08-05: (a) não existe FRA para encher — esta
+> imagem sobe com `db_recovery_file_dest` nulo e arquiva em
+> `$ORACLE_HOME/dbs/arch`, fora do volume; (b) não existe `rman` na imagem
+> `slim`, então `DELETE ARCHIVELOG ALL` nunca foi executável aqui. Só o terceiro
+> termo — "acumula até encher" — se confirmou.
+>
+> É o caso mais instrutivo do trabalho sobre os limites da documentação: o risco
+> estava identificado e escrito no lugar certo, mas o remédio nunca foi
+> executado, e por isso nunca foi verificado. Corrigido na **decisão 27**, que
+> substitui o lembrete em prosa por `make disco`, `make limpar-archivelog` e uma
+> FRA criada dentro do volume pelo init.
+
 ---
 
 ## 6. Supplemental logging: `(ALL) COLUMNS` na `PROC`
@@ -1166,3 +1179,240 @@ registrado como ruído conhecido, a investigar com:
 ```bash
 docker compose exec clickhouse sh -c 'sed -n "140,160p" /entrypoint.sh'
 ```
+
+---
+---
+
+## 27. O disco encheu, a hipótese estava errada, e a investigação achou três defeitos
+
+Em **2026-08-05** o disco da máquina de desenvolvimento encheu e o host passou a
+travar ao subir o Docker. A sessão de finalização do TCC começou com uma
+emergência de infraestrutura.
+
+A hipótese de trabalho era a consequência já registrada na decisão 5: com
+ARCHIVELOG ligado, os archived redo logs se acumulam e nada os apaga. **A
+medição mostrou que não foi isso.** O registro abaixo mantém a hipótese errada
+em vez de apagá-la, porque o caminho até derrubá-la é o que produziu os achados.
+
+### O que foi medido, antes de apagar qualquer coisa
+
+Disco do host:
+
+| Item | Valor |
+|---|---|
+| `C:` do Windows | 404 GB usados de 476 GB — **73 GB livres (85%)** |
+| `docker_data.vhdx` (Docker Desktop) | **45,4 GiB** |
+| `ext4.vhdx` da distro Ubuntu | 17,7 GiB (15 GB reais dentro) |
+| `/` dentro do WSL | 15 GB usados de 1007 GB nominais |
+
+O disco do Linux nunca esteve cheio. Encheu o **`C:` do Windows**, e o maior
+bloco isolado ali é o disco de dados do Docker Desktop. A distinção não é
+detalhe: quem olha só o `df -h` de dentro do WSL vê 941 GB livres e conclui que
+não há problema de disco.
+
+Dentro do Docker (`docker system df`):
+
+| Tipo | Total | Recuperável |
+|---|---|---|
+| Imagens | 32,38 GB | **19,35 GB (59%)** |
+| Build cache | 14,35 GB | **14,35 GB (100%)** |
+| Volumes | 5,80 GB | 493,7 MB |
+| Containers | 153,7 MB | 0 |
+
+Os volumes do projeto somam pouco: `oracle-data` 3,285 GB, `kafka-data`
+1,804 GB, `clickhouse-data` 215,5 MB, `clickhouse-logs` 731 kB. O restante das
+imagens e dos volumes é de **outros projetos** na mesma máquina
+(`verdic-backend`, `lexdata-backend`, `bd_pgdata`).
+
+E os archived redo logs, a causa suspeita:
+
+```
+11 arquivos, 90 MB
+```
+
+**90 MB.** A hipótese estava errada por três ordens de grandeza. O que encheu o
+disco foram ~33,7 GB de lixo recuperável do Docker — imagens obsoletas e build
+cache, a maior parte sem relação com este projeto — dentro de um `.vhdx` que
+nunca encolheu sozinho.
+
+### O que a investigação encontrou, ao perseguir a hipótese errada
+
+Três defeitos reais, nenhum deles a causa da queda, todos capazes de causar uma
+depois.
+
+**Defeito 1 — não existe Fast Recovery Area.** Medido no container de pé:
+
+```
+db_recovery_file_dest ......... NULO
+db_recovery_file_dest_size .... 0
+v$recovery_file_dest .......... ZERO linhas
+```
+
+A decisão 5 prescrevia "aumentar `db_recovery_file_dest_size`" para um banco que
+não tinha FRA nenhuma. E qualquer monitoração baseada em `v$recovery_file_dest`
+— inclusive a primeira versão do `make disco`, escrita nesta mesma sessão —
+reportaria "tudo bem" com o disco enchendo, porque a view devolve zero linhas.
+Por isso a medição definitiva é sobre `v$archived_log`, que enxerga os arquivos
+onde quer que eles estejam.
+
+**Defeito 2 — os archived logs ficavam fora do volume.** Sem FRA, o destino de
+arquivamento era:
+
+```
+DEST_ID 1   VALID   MANDATORY   /opt/oracle/product/26ai/dbhomeFree/dbs/arch
+```
+
+`$ORACLE_HOME/dbs/arch` está na **camada gravável do container**, não no volume
+`oracle-data`. É a decisão 18 se repetindo em outra roupa — lá era o datafile,
+aqui é o redo arquivado. A consequência é pior que perder disco: os archived
+logs desaparecem quando o container é recriado, e o conector Debezium que
+dependia deles quebra com **ORA-01291 (missing logfile)**. Um `docker compose
+down && up` — operação rotineira, que os volumes nomeados deveriam tornar segura
+— podia partir o pipeline de CDC sem aviso.
+
+**Defeito 3 — o remédio prescrito não existe nesta imagem.** A decisão 5 mandava
+limpar com `RMAN> DELETE ARCHIVELOG ALL`. Verificado em execução:
+
+```
+$ docker compose exec oracle rman target /
+exec: "rman": executable file not found in $PATH
+$ ls $ORACLE_HOME/bin/rman   ->  No such file or directory
+```
+
+A imagem `gvenzl/oracle-free:23-slim-faststart` **remove o RMAN** — é parte do
+que a torna *slim*. A instrução operacional registrada no repositório era
+inexecutável desde o primeiro dia, e ninguém percebeu porque ninguém a executou.
+
+### O que torna este caso diferente dos anteriores
+
+As decisões 5, 18, 25 e 26 seguem o mesmo padrão: uma suposição sobrevive à
+revisão estática e cai na primeira execução real. **Esta é de outra natureza.**
+O conhecimento existia, por extenso, no arquivo certo:
+
+> *"**Consequência operacional:** com ARCHIVELOG ligado, o Oracle acumula
+> archived logs até encher a FRA. (…) é preciso limpar (`RMAN> DELETE ARCHIVELOG
+> ALL;`) ou aumentar `db_recovery_file_dest_size`."*
+
+O `scripts/enable-archivelog.sh` imprimia o mesmo lembrete ao fim de cada
+execução. Estava escrito, estava num lugar visível — e estava **errado em dois
+dos três termos**: não havia FRA para encher, e não havia RMAN para limpar. O
+parágrafo nunca foi executado, então nunca foi testado; e texto que não é
+executado não é verificado por nada.
+
+A lição não é sobre verificação estática, é sobre execução: **documentar não é
+implementar**. Um lembrete em prosa delega a um operador humano uma tarefa que
+ninguém agendou, num ambiente cuja premissa declarada é ser reproduzível por
+comando. Pior: um remédio escrito e nunca executado acumula erros silenciosamente
+enquanto passa a impressão de que o risco está coberto.
+
+Isso qualifica a tese do trabalho em vez de contradizê-la. Verificação estática
+não substitui execução; e **documentação não substitui automação**. São dois
+degraus distintos, e o projeto agora tem exemplo empírico de cada um.
+
+### Consequência colateral, e por que ela importa para o resultado
+
+A queda interrompeu a execução do benchmark oficial.
+`validacao/evidencias/bench-oficial-20260804.txt` termina em:
+
+```
+Medindo ClickHouse com lote=1...
+```
+
+Nenhuma repetição concluída, nenhum lote fechado, nenhuma completude verificada.
+Ele **não é** um resultado — é o registro de um run interrompido, e foi
+descartado como número oficial. A falha de infraestrutura não custou só tempo:
+custou a medição principal.
+
+### Correção, em quatro camadas
+
+Nenhuma resolve sozinha; a ordem é de contenção crescente.
+
+| Camada | Onde | O que faz |
+|---|---|---|
+| **Medir** | `make disco` (`scripts/disco.sh`) | Archived logs (quantidade, MB e quantos estão fora do volume), FRA, volumes Docker, disco do host e tamanho dos `.vhdx` do WSL2. |
+| **Avisar** | `make validate`, item `f` | Aviso — nunca falha — quando a FRA passa de `FRA_ALERTA` (70%). Um ambiente em 75% está funcionando; é a última janela para agir de graça. |
+| **Limpar** | `make limpar-archivelog` | Apaga archived logs, idempotente, informando quanto foi liberado. |
+| **Conter** | `ORACLE_FRA_SIZE` (`06_fra_size.sql`) | Cria a FRA **dentro do volume** e aplica teto de 4G, no init. |
+
+**A FRA agora fica dentro do volume.** `06_fra_size.sql` define
+`db_recovery_file_dest_size` e depois `db_recovery_file_dest =
+/opt/oracle/oradata/recovery_area`. A ordem importa: definir o destino sem o
+tamanho falha com ORA-19802. Não é preciso mexer em `log_archive_dest_1` —
+verificado em execução que, ao definir a FRA, o destino 1 migra sozinho de
+`dbs/arch` para `USE_DB_RECOVERY_FILE_DEST` e troca de `MANDATORY` para
+`OPTIONAL`. Confirmado forçando um `ALTER SYSTEM ARCHIVE LOG CURRENT`: o novo
+arquivo saiu em `/opt/oracle/oradata/recovery_area/FREE/archivelog/2026_08_05/`.
+
+**A limpeza não usa RMAN, porque não há RMAN.** Usa
+`SYS.DBMS_BACKUP_RESTORE.deleteArchivedLog`, o pacote que o próprio RMAN chama
+por baixo. Ele apaga o arquivo do disco **e** baixa o registro no controlfile —
+e esse par é o que mantém a contabilidade correta. Apagar os arquivos com `rm`
+deixaria o Oracle contando espaço que já não existe, até recusar arquivamento
+com o disco vazio.
+
+Verificado em execução, nesta ordem:
+
+| Comando | Antes | Depois | Liberado |
+|---|---|---|---|
+| `make limpar-archivelog` (janela de 1 h) | 11 logs, 90 MB | 4 logs, 31 MB | 59 MB |
+| `make limpar-archivelog a=--tudo` | 4 logs, 31 MB | 0 logs, 0 MB | 31 MB |
+
+**Sobre o teto — o que ele não faz.** Não impede o acúmulo: os archived logs
+continuam se acumulando na mesma velocidade. Ele **troca o modo de falha**. Sem
+teto, o arquivamento cresce até esgotar o disco do host e derruba tudo o que roda
+nele, inclusive a coleta de evidências em andamento. Com teto, ao atingir o
+limite o Oracle recusa novos archived logs (ORA-19809 / ORA-19804) e suspende as
+escritas: o banco trava, o host sobrevive, e o diagnóstico aparece no alert log
+em vez de num congelamento de sistema operacional. Falha contida e legível em
+vez de falha difusa. É contenção, não solução.
+
+**Sobre a limpeza — o cuidado que não é óbvio.** O padrão **não** é apagar tudo.
+O Debezium lê o redo pelo LogMiner; apagar um archived log que o conector ainda
+não consumiu o quebra com ORA-01291, e a recuperação é re-registrar o conector,
+perdendo a posição. O padrão preserva uma janela de 1 hora — ordens de grandeza
+acima da latência medida do pipeline, que é da casa de segundos. O modo agressivo
+existe (`make limpar-archivelog a=--tudo`), mas exige pedido explícito e avisa
+antes.
+
+Nota empírica, com o alcance limitado que ela tem: o `--tudo` foi executado com o
+`projudi-proc-connector` registrado, e o conector **continuou `RUNNING`** — ele
+estava em dia, lendo do redo online, sem depender de nenhum arquivado. Isso
+demonstra o mecanismo, não a segurança do comando: com um conector atrasado o
+resultado seria o oposto.
+
+Isto é, em si, um resultado da Solução 2 que a banca pode cobrar: **o CDC impõe
+uma restrição de retenção ao banco de origem.** Os archived logs deixam de ser
+descartáveis a critério do DBA e passam a ter um consumidor com posição própria.
+
+### Um modo de falha que o script novo teria escondido
+
+A primeira versão do `limpar-archivelog.sh` foi escrita para RMAN e detectava
+erro procurando a string `RMAN-` na saída. Quando o `rman` não existia, a saída
+era `exec: "rman": executable file not found` — que não contém `RMAN-`. O script
+reportou:
+
+```
+✅ nada a liberar — a FRA já estava limpa (0 arquivo(s) apagado(s))
+```
+
+...num banco com 12 archived logs presentes. Um script de higiene que reporta
+sucesso quando não executou nada é pior que não ter script: ele consome a
+atenção que faria alguém olhar. A versão final exige que o bloco imprima um
+marcador `[resultado]` explícito e falha se ele não aparecer — o mesmo princípio
+das decisões 25 e 26: **ausência de erro não é evidência de execução**.
+
+### O que fica declarado como limitação
+
+- O teto de 4G é dimensionado para **laboratório**. Em produção o dimensionamento
+  da FRA é decisão de DBA, função do volume de redo e da política de retenção de
+  backup — nada disso foi medido aqui.
+- **Não há limpeza agendada dentro do container.** É sob demanda, por comando.
+  Um `cron` no container foi considerado e descartado: acrescentaria um processo
+  não observável ao ambiente de medição, capaz de disparar no meio de uma coleta
+  e contaminá-la. Em produção quem agenda isso é o DBA, com as ferramentas dele.
+- A recuperação de espaço no host, no WSL2, **continua manual** e fora do alcance
+  de qualquer alvo do `Makefile`: exige `wsl --shutdown` e compactação do `.vhdx`
+  pelo PowerShell, do lado do Windows.
+- Os archived logs criados **antes** desta correção continuam em `dbs/arch`, fora
+  do volume. `make disco` e `make limpar-archivelog` os contam e os apagam, mas
+  só um ambiente recriado (`make reset && make up`) nasce inteiramente correto.

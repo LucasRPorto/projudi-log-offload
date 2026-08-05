@@ -15,8 +15,11 @@ DC           := docker compose --env-file .env -f $(COMPOSE_FILE)
 # Serviço alvo de `make logs` (padrão: todos)
 s ?=
 
+# Argumentos extras de `make limpar-archivelog` (ex.: a="--tudo", a="--horas 6")
+a ?=
+
 .DEFAULT_GOAL := help
-.PHONY: help setup up up-lite down restart reset logs status ps validate validate-lite archivelog ch sql connector connector-status build
+.PHONY: help setup up up-lite down restart reset logs status ps validate validate-lite archivelog limpar-archivelog disco ch sql connector connector-status build
 
 help: ## Lista os alvos disponíveis
 	@echo ""
@@ -26,8 +29,9 @@ help: ## Lista os alvos disponíveis
 		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[1m%-18s\033[0m %s\n", $$1, $$2}'
 	@echo ""
 	@echo "  Exemplos:"
-	@echo "    make logs s=oracle       segue o log de um serviço"
-	@echo "    make logs                segue o log de todos"
+	@echo "    make logs s=oracle              segue o log de um serviço"
+	@echo "    make logs                       segue o log de todos"
+	@echo "    make limpar-archivelog a=--tudo apaga TODOS os archived logs"
 	@echo ""
 
 setup: ## Verifica pré-requisitos, cria o .env e baixa/constrói as imagens
@@ -96,6 +100,12 @@ validate-lite: ## Valida só o ClickHouse (para quem subiu com up-lite)
 
 archivelog: ## Coloca o Oracle em ARCHIVELOG (pré-requisito do CDC)
 	@./scripts/enable-archivelog.sh
+
+limpar-archivelog: ## Apaga archived redo logs (a=--tudo apaga todos; pode quebrar o CDC)
+	@./scripts/limpar-archivelog.sh $(a)
+
+disco: ## Mostra uso da FRA, dos volumes Docker e do disco do host
+	@./scripts/disco.sh
 
 build: ## Reconstrói a imagem do Kafka Connect (com o driver ojdbc)
 	@$(DC) build --no-cache connect

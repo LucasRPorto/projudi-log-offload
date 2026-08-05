@@ -104,6 +104,19 @@ services:
       ORACLE_PROJUDI_PASSWORD: ${ORACLE_PROJUDI_PASSWORD:-projudi_dev}
       ORACLE_DBZ_USER: ${ORACLE_DBZ_USER:-c##dbzuser}
       ORACLE_DBZ_PASSWORD: ${ORACLE_DBZ_PASSWORD:-dbz_dev}
+      # Teto da Fast Recovery Area, criada pelo init em
+      # /opt/oracle/oradata/recovery_area — DENTRO do volume.
+      #
+      # Esta imagem sobe SEM FRA (verificado em execução: db_recovery_file_dest
+      # nulo), e com ARCHIVELOG ligado arquiva em $ORACLE_HOME/dbs/arch, na
+      # camada gravável do container. Lá os archived logs não sobrevivem a uma
+      # recriação — e o Debezium que dependia deles quebra com ORA-01291 — nem
+      # encontram teto algum antes de o disco do host acabar.
+      #
+      # O teto não impede o acúmulo: troca "o host cai" por "o Oracle suspende
+      # as escritas", falha contida e legível. A limpeza é `make limpar-archivelog`
+      # e o `make disco` avisa antes. Ver docs/decisoes.md, decisão 27.
+      ORACLE_FRA_SIZE: ${ORACLE_FRA_SIZE:-4G}
       # Só têm efeito quando o banco é criado do zero (imagens não-faststart)
       INIT_SGA_SIZE: ${ORACLE_SGA_SIZE:-1536}
       INIT_PGA_SIZE: ${ORACLE_PGA_SIZE:-512}

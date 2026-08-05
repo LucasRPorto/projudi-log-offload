@@ -11,7 +11,8 @@
 #      aplicação (é o caminho que a Frente B vai usar via JDBC)
 #
 # Extras (não bloqueiam o resultado, mas são pré-requisito do CDC):
-#   f) Oracle em ARCHIVELOG, supplemental logging ligado, usuário do Debezium ok
+#   f) Oracle em ARCHIVELOG, supplemental logging ligado, usuário do Debezium ok,
+#      e ocupação da Fast Recovery Area dentro do limite de alerta (decisão 27)
 #
 # Uso:
 #   ./scripts/validate.sh           valida o ambiente completo (make up)
@@ -462,6 +463,45 @@ if [ "${DBZ_OK}" = "1" ]; then
     ok "usuário do Debezium '${ORACLE_DBZ_USER}' existe"
 else
     warn "usuário do Debezium '${ORACLE_DBZ_USER}' não encontrado"
+fi
+
+# ---------------------------------------------------------------------------
+# Ocupação da Fast Recovery Area.
+#
+# É AVISO, nunca falha: uma FRA em 75% não invalida o ambiente — ele está
+# funcionando. Mas é a última janela em que ainda dá para agir sem prejuízo.
+# Quando ela fecha, o Oracle suspende as escritas (ORA-19809) e, sem teto
+# compatível, o disco do host vai junto — foi o que derrubou a máquina de
+# desenvolvimento em 2026-08-05. Ver decisão 27.
+#
+# A checagem fica AQUI, no item f, porque o problema só existe com ARCHIVELOG
+# ligado, que é exatamente o pré-requisito do CDC validado neste bloco.
+# ---------------------------------------------------------------------------
+FRA_ALERTA="${FRA_ALERTA:-70}"
+FRA_LINHA="$(ora_sys "select space_limit || '|' || space_used from v\$recovery_file_dest;" \
+             | tr -d '\r' | grep '|' | head -1)"
+
+if [ -z "${FRA_LINHA}" ]; then
+    warn "não foi possível ler a ocupação da FRA (v\$recovery_file_dest)"
+else
+    FRA_LIMITE="${FRA_LINHA%%|*}"
+    FRA_USADO="${FRA_LINHA##*|}"
+    if [ "${FRA_LIMITE:-0}" -gt 0 ] 2>/dev/null; then
+        FRA_PCT="$(awk -v u="${FRA_USADO}" -v l="${FRA_LIMITE}" 'BEGIN {printf "%d", (u*100)/l}')"
+        FRA_GB="$(awk -v l="${FRA_LIMITE}" 'BEGIN {printf "%.1f", l/1024/1024/1024}')"
+        if [ "${FRA_PCT}" -ge "${FRA_ALERTA}" ]; then
+            warn "FRA em ${FRA_PCT}% de ${FRA_GB} GB — acima do limite de alerta (${FRA_ALERTA}%)"
+            info "os archived redo logs não são apagados sozinhos; rode:"
+            info "  make limpar-archivelog        (preserva a última hora, seguro para o conector)"
+            info "detalhes:  make disco"
+        else
+            ok "FRA em ${FRA_PCT}% de ${FRA_GB} GB (alerta a partir de ${FRA_ALERTA}%)"
+        fi
+    else
+        warn "db_recovery_file_dest_size = 0 (sem teto) — a FRA pode encher o disco do host"
+        info "defina ORACLE_FRA_SIZE no .env e recrie, ou aplique à mão:"
+        info "  ALTER SYSTEM SET db_recovery_file_dest_size = 4G SCOPE=BOTH;"
+    fi
 fi
 
 fi   # fim do bloco ignorado no modo --lite (item f)
