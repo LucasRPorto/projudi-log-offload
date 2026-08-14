@@ -188,11 +188,11 @@ public void inserir(LogDt dados) throws Exception {
                 .codigoTemp(dados.getCodigoTemp())
                 .construir());
         dados.setId(String.valueOf(idLog));
-        if (!writer.destino().gravaNoOracle()) {
-            return;
-        }
+
     }
-    inserirNoOracle(dados);
+    if (writer.destino().gravaNoOracle()) {
+        inserirNoOracle(dados);
+    }
 }
 ```
 
