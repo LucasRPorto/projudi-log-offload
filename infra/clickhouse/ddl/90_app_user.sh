@@ -1,41 +1,25 @@
 #!/bin/sh
 # =============================================================================
 # 90 — Usuário de aplicação do ClickHouse
-#
-# Roda por último no /docker-entrypoint-initdb.d, quando os dois bancos já
-# existem (os GRANTs precisam deles).
-#
-# É um .sh e não um .sql porque a senha vem do .env, e arquivo DDL versionado
-# não pode carregar segredo. As variáveis CH_APP_USER / CH_APP_PASSWORD são
-# injetadas pelo compose.
-#
-# O usuário `default` é preservado (sem senha, para uso interativo via
-# `make ch`). Este script cria um segundo usuário, com escopo restrito aos dois
-# bancos do projeto — é ele que a Frente B (log-writer) usa via JDBC.
-#
-# Nota: o entrypoint oficial executa este arquivo com `.` (source) quando ele
-# não tem bit de execução, o que é o caso num checkout Windows. Por isso aqui
-# não se usa `set -e` nem `exit`: um erro derrubaria o entrypoint inteiro sem
-# mensagem útil. Falhas são reportadas explicitamente.
 # =============================================================================
 
 CH_APP_USER="${CH_APP_USER:-projudi_app}"
 CH_APP_PASSWORD="${CH_APP_PASSWORD:-projudi_app_dev}"
 
+# Escapes para evitar quebra de SQL por caracteres especiais
+CH_APP_USER_SQL="$(printf '%s' "$CH_APP_USER" | sed 's/`/``/g')"
+CH_APP_PASSWORD_SQL="$(printf '%s' "$CH_APP_PASSWORD" | sed "s/'/''/g")"
+
 echo "90_app_user.sh: criando usuário de aplicação '${CH_APP_USER}'"
 
 clickhouse-client --host 127.0.0.1 --multiquery <<EOSQL
-CREATE USER IF NOT EXISTS ${CH_APP_USER}
-    IDENTIFIED WITH sha256_password BY '${CH_APP_PASSWORD}'
-    HOST ANY
+CREATE USER IF NOT EXISTS \`${CH_APP_USER_SQL}\`
+    IDENTIFIED WITH sha256_password BY '${CH_APP_PASSWORD_SQL}'
     DEFAULT DATABASE projudi_logs;
 
-GRANT ALL    ON projudi_logs.*      TO ${CH_APP_USER};
-GRANT ALL    ON projudi_historico.* TO ${CH_APP_USER};
-
--- Necessário para o log-writer inspecionar o próprio throughput e para os
--- scripts de validação consultarem parts/mutations sem usar o `default`.
-GRANT SELECT ON system.*            TO ${CH_APP_USER};
+GRANT ALL    ON projudi_logs.*      TO \`${CH_APP_USER_SQL}\`;
+GRANT ALL    ON projudi_historico.* TO \`${CH_APP_USER_SQL}\`;
+GRANT SELECT ON system.*            TO \`${CH_APP_USER_SQL}\`;
 EOSQL
 
 if [ $? -eq 0 ]; then

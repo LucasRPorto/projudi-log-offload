@@ -33,5 +33,5 @@ Desktop.ini
 .DS_Store
 
 # ---- Evidências de validação geradas localmente ----
-validacao/evidencias/*
-!validacao/evidencias/.gitkeep
+# validacao/evidencias/*
+# !validacao/evidencias/.gitkeep
