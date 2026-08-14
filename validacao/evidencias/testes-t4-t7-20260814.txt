@@ -1,0 +1,121 @@
+============================================================
+EVIDÊNCIAS — T4 a T7  —  2026-08-14 16:51:48
+Máquina: serpro-1578776  |  OS: 7.0.0-29-generic
+============================================================
+
+── ESTADO DO AMBIENTE ───────────────────────────────────────
+SERVICE      STATUS             PORTS
+clickhouse   Up About an hour   8123/tcp, 9000/tcp
+connect      Up 4 minutes       8083/tcp
+kafka        Up 2 hours         29092/tcp
+kafka-ui     Up 2 hours         8080/tcp
+oracle       Up 2 hours         1521/tcp
+
+── CONECTOR DEBEZIUM ────────────────────────────────────────
+{
+    "name": "projudi-proc-connector",
+    "connector": {
+        "state": "RUNNING",
+        "worker_id": "10.89.1.15:8083",
+        "version": "3.6.0.Final"
+    },
+    "tasks": [
+        {
+            "id": 0,
+            "state": "RUNNING",
+            "worker_id": "10.89.1.15:8083",
+            "version": "3.6.0.Final"
+        }
+    ],
+    "type": "source"
+}
+
+── T4 — LATÊNCIA CDC (3 medições) ───────────────────────────
+Medição 1 | ID_PROC=1001 | LOCALIZADOR=T4-MEDICAO-1-*
+   ┌─ts_oracle───────────┬───────ts_clickhouse─┬─latencia_s─┬─cdc_op─┬─ID_PROC─┬─ID_PROC_FASE─┬─ID_PROC_STATUS─┬──VALOR─┬─LOCALIZADOR─────────┐
+1. │ 2026-08-14 19:43:14 │ 2026-08-14 19:43:15 │          1 │ u      │    1001 │            2 │              5 │ 1111.1 │ T4-MEDICAO-1-164312 │
+   └─────────────────────┴─────────────────────┴────────────┴────────┴─────────┴──────────────┴────────────────┴────────┴─────────────────────┘
+
+Medição 2 | ID_PROC=1002 | LOCALIZADOR=T4-MEDICAO-2-*
+   ┌─ts_oracle───────────┬───────ts_clickhouse─┬─latencia_s─┬─cdc_op─┬─ID_PROC─┬─ID_PROC_FASE─┬─ID_PROC_STATUS─┬───VALOR─┬─LOCALIZADOR─────────┐
+1. │ 2026-08-14 19:43:59 │ 2026-08-14 19:44:00 │          1 │ u      │    1002 │            3 │              2 │ 2222.21 │ T4-MEDICAO-2-164355 │
+   └─────────────────────┴─────────────────────┴────────────┴────────┴─────────┴──────────────┴────────────────┴─────────┴─────────────────────┘
+
+Medição 3 | ID_PROC=1003 | LOCALIZADOR=T4-MEDICAO-3-*
+   ┌─ts_oracle───────────┬───────ts_clickhouse─┬─latencia_s─┬─cdc_op─┬─ID_PROC─┬─ID_PROC_FASE─┬─ID_PROC_STATUS─┬───VALOR─┬─LOCALIZADOR─────────┐
+1. │ 2026-08-14 19:44:38 │ 2026-08-14 19:44:39 │          1 │ u      │    1003 │            4 │              6 │ 3333.33 │ T4-MEDICAO-3-164437 │
+   └─────────────────────┴─────────────────────┴────────────┴────────┴─────────┴──────────────┴────────────────┴─────────┴─────────────────────┘
+
+── T5 — COMPLETUDE SOB RAJADA (100 UPDATEs) ────────────────
+   ┌─eventos_chegados─┬─eventos_esperados─┬─aprovado─┬────────────primeiro─┬──────────────ultimo─┬─janela_s─┐
+1. │              100 │               100 │        1 │ 2026-08-14 19:45:51 │ 2026-08-14 19:45:52 │        1 │
+   └──────────────────┴───────────────────┴──────────┴─────────────────────┴─────────────────────┴──────────┘
+
+── T6 — RESILIÊNCIA (50 UPDATEs com Connect parado) ────────
+   ┌─eventos_chegados─┬─eventos_esperados─┬─aprovado─┬────────────primeiro─┬──────────────ultimo─┐
+1. │               50 │                50 │        1 │ 2026-08-14 19:48:50 │ 2026-08-14 19:48:50 │
+   └──────────────────┴───────────────────┴──────────┴─────────────────────┴─────────────────────┘
+
+── T7 — DEMO AO VIVO (evento exibido à banca) ───────────────
+   ┌─ts_oracle───────────┬───────ts_clickhouse─┬─latencia_s─┬─cdc_op─┬─ID_PROC─┬─ID_PROC_FASE─┬─ID_PROC_STATUS─┬───VALOR─┬─LOCALIZADOR─────────┐
+1. │ 2026-08-14 19:49:26 │ 2026-08-14 19:49:28 │          2 │ u      │    1004 │            5 │              8 │ 7777.77 │ DEMO-AO-VIVO-164925 │
+   └─────────────────────┴─────────────────────┴────────────┴────────┴─────────┴──────────────┴────────────────┴─────────┴─────────────────────┘
+
+── RESUMO GERAL proc_cdc ────────────────────────────────────
+   ┌─cdc_op─┬─eventos─┬────────────primeiro─┬──────────────ultimo─┐
+1. │ r      │       6 │ 2026-08-14 18:39:22 │ 2026-08-14 18:39:22 │
+2. │ u      │     154 │ 2026-08-14 19:43:15 │ 2026-08-14 19:49:28 │
+   └────────┴─────────┴─────────────────────┴─────────────────────┘
+
+── DISCO ────────────────────────────────────────────────────
+
+══ Uso de disco — projudi-log-offload ══
+
+1  Sistema de arquivos do host
+
+     MONTADO EM                  TAM    USADO    LIVRE   USO%
+     /                           73G      25G      45G    37%
+
+2  Docker — imagens, containers e volumes
+
+     TYPE           TOTAL       ACTIVE      SIZE        RECLAIMABLE
+     Images         29          19          22.12GB     9.798GB (44%)
+     Containers     19          5           214.6MB     124.9MB (58%)
+     Local Volumes  13          13          10.09GB     0B (0%)
+
+     volumes (do maior para o menor):
+          6.353GB  projudi-log-offload_oracle-data
+          1.805GB  projudi-log-offload_kafka-data
+          1.457GB  huly_v7_cr_data
+          42.45MB  huly_v7_elastic
+          381.2MB  projudi-log-offload_clickhouse-data
+          1.001MB  projudi-log-offload_clickhouse-logs
+           47.3MB  huly_v7_files
+          643.5kB  944fb6753f2d9a166cb331f2051c41d0fb30bcc2275b3e5fae47d68ca153f0b3
+          54.25kB  83bc7976ac867130ea87215f84aed6eb8dcb57ec69640efd681b98fa6d2a8b7f
+          360.3kB  huly_v7_redpanda
+          11.34kB  huly_v7_cr_certs
+               0B  708013d40ad3de9c42f5667fc20da8dafb5127ea1ffd4acee57fd57de455e2d1
+               0B  2fa76f4075e3fe44b7473a0dcc175c0ac76551352caf8fc77bbdd61720908692
+
+3  Oracle — Fast Recovery Area (onde os archived redo logs se acumulam)
+
+     log_mode          ARCHIVELOG
+     destino           /opt/oracle/oradata/recovery_area
+     limite            4,0 GB
+     em uso            1,8 GB (46%)
+     recuperável       0 B
+     arquivos          193
+     arquivados        192 archived log(s), 1866 MB
+
+     ocupação por tipo de arquivo:
+       TIPO                     USO%   RECUP%     ARQS
+       ARCHIVED LOG	       45.56	   0	 192
+       BACKUP PIECE		 .44	   0	   1
+
+  ✅ FRA em 46% — dentro do limite de alerta (70%)
+
+
+============================================================
+FIM DO ARQUIVO DE EVIDÊNCIAS
+============================================================
