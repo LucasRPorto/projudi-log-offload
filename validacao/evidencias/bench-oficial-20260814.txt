@@ -1,0 +1,138 @@
+
+--------------------------------------------------------------------------------
+BENCHMARK — Solução 1 (offload de log): Oracle x ClickHouse
+--------------------------------------------------------------------------------
+Data/hora .......... 2026-08-14 15:40:04 BRT
+Máquina ............ Linux 7.0.0-29-generic (amd64)
+Núcleos disponíveis  8
+Heap máximo ........ 7944 MB
+JVM ................ OpenJDK 64-Bit Server VM 25.0.3 (Ubuntu)
+Encoding ........... UTF-8
+
+Registros medidos .. 20000
+Warmup ............. 1000 (fora do cronômetro)
+Repetições ......... 5
+Tamanhos de lote ... [1, 100, 500, 2000]
+Credenciais de ..... /home/maicons/s413987118/Documentos/projects/tjgo/tcc/projudi-log-offload/.env
+
+Parâmetros efetivos (valor <- procedência):
+  bench.saida            ../validacao/evidencias/bench-oficial-20260814.txt <- system property
+  bench.n                20000                                          <- system property
+  bench.warmup           1000                                           <- padrão
+  bench.repeticoes       5                                              <- system property
+  bench.lotes            1,100,500,2000                                 <- system property
+  bench.limpar           true                                           <- padrão
+  bench.oracle           true                                           <- padrão
+  bench.clickhouse       true                                           <- padrão
+  bench.seco             false                                          <- padrão
+  bench.ch.url           jdbc:ch://localhost:8123/projudi_logs          <- padrão
+  bench.ch.usuario       projudi_app                                    <- .env (CH_APP_USER)
+  bench.ch.senha         ********                                       <- .env (CH_APP_PASSWORD)
+  bench.oracle.url       jdbc:oracle:thin:@//localhost:1521/FREEPDB1    <- padrão
+  bench.oracle.usuario   PROJUDI                                        <- padrão
+  bench.oracle.senha     ********                                       <- .env (ORACLE_PROJUDI_PASSWORD)
+
+Verificando destinos:
+  ClickHouse: disponível
+  Oracle: disponível
+
+Tabelas esvaziadas antes da medição (bench.limpar=true).
+
+Gerando 21000 registros de carga (payloads reais)...
+
+Medindo ClickHouse com lote=1...
+  repetição 1/5: 394.730 ms  (51 reg/s)
+  repetição 2/5: 324.848 ms  (62 reg/s)
+  repetição 3/5: 335.576 ms  (60 reg/s)
+  repetição 4/5: 199.617 ms  (100 reg/s)
+  repetição 5/5: 162.057 ms  (123 reg/s)
+
+Medindo Oracle com lote=1...
+  repetição 1/5: 35.273 ms  (567 reg/s)
+  repetição 2/5: 35.310 ms  (566 reg/s)
+  repetição 3/5: 36.485 ms  (548 reg/s)
+  repetição 4/5: 35.026 ms  (571 reg/s)
+  repetição 5/5: 33.547 ms  (596 reg/s)
+
+Medindo ClickHouse com lote=100...
+  repetição 1/5: 1.595 ms  (12.540 reg/s)
+  repetição 2/5: 1.492 ms  (13.404 reg/s)
+  repetição 3/5: 1.476 ms  (13.549 reg/s)
+  repetição 4/5: 1.520 ms  (13.158 reg/s)
+  repetição 5/5: 2.043 ms  (9.790 reg/s)
+
+Medindo Oracle com lote=100...
+  repetição 1/5: 5.284 ms  (3.785 reg/s)
+  repetição 2/5: 14.922 ms  (1.340 reg/s)
+  repetição 3/5: 3.951 ms  (5.062 reg/s)
+  repetição 4/5: 4.341 ms  (4.608 reg/s)
+  repetição 5/5: 8.367 ms  (2.390 reg/s)
+
+Medindo ClickHouse com lote=500...
+  repetição 1/5: 546 ms  (36.660 reg/s)
+  repetição 2/5: 514 ms  (38.945 reg/s)
+  repetição 3/5: 440 ms  (45.423 reg/s)
+  repetição 4/5: 715 ms  (27.953 reg/s)
+  repetição 5/5: 472 ms  (42.389 reg/s)
+
+Medindo Oracle com lote=500...
+  repetição 1/5: 5.416 ms  (3.693 reg/s)
+  repetição 2/5: 4.684 ms  (4.270 reg/s)
+  repetição 3/5: 5.479 ms  (3.650 reg/s)
+  repetição 4/5: 6.129 ms  (3.263 reg/s)
+  repetição 5/5: 3.899 ms  (5.130 reg/s)
+
+Medindo ClickHouse com lote=2000...
+  repetição 1/5: 200 ms  (100.128 reg/s)
+  repetição 2/5: 246 ms  (81.143 reg/s)
+  repetição 3/5: 223 ms  (89.784 reg/s)
+  repetição 4/5: 133 ms  (150.408 reg/s)
+  repetição 5/5: 146 ms  (137.424 reg/s)
+
+Medindo Oracle com lote=2000...
+  repetição 1/5: 5.561 ms  (3.596 reg/s)
+  repetição 2/5: 8.158 ms  (2.452 reg/s)
+  repetição 3/5: 7.217 ms  (2.771 reg/s)
+  repetição 4/5: 7.258 ms  (2.755 reg/s)
+  repetição 5/5: 4.424 ms  (4.521 reg/s)
+
+--------------------------------------------------------------------------------
+RESULTADO — 20000 registros por rodada, mediana de repetições
+--------------------------------------------------------------------------------
+Destino            Lote   Mediana (ms)  Vazão (reg/s)  Melhor (ms)    Pior (ms)
+--------------------------------------------------------------------------------
+ClickHouse            1      324.848,5             62    162.057,1    394.729,6
+Oracle                1       35.273,3            567     33.547,4     36.484,9
+ClickHouse          100        1.519,9         13.158      1.476,1      2.043,0
+Oracle              100        5.284,0          3.785      3.950,8     14.922,4
+ClickHouse          500          513,5         38.945        440,3        715,5
+Oracle              500        5.416,3          3.693      3.898,8      6.129,5
+ClickHouse         2000          199,7        100.128        133,0        246,5
+Oracle             2000        7.217,3          2.771      4.423,9      8.157,6
+--------------------------------------------------------------------------------
+
+Razão Oracle / ClickHouse (>1 significa ClickHouse mais rápido):
+  lote=1      0,11x
+  lote=100    3,48x
+  lote=500    10,55x
+  lote=2000   36,13x
+
+Completude (linhas x ID_LOG distintos — precisam bater):
+  ClickHouse        420.000 linhas        420.000 IDs distintos   OK
+  Oracle            420.000 linhas        420.000 IDs distintos   OK
+
+--------------------------------------------------------------------------------
+Ressalvas metodológicas que precisam acompanhar estes números:
+
+1. Os dois destinos estão em containers no MESMO host. Comparar um
+   destino em LAN corporativa com outro pela internet mediria rede,
+   não banco (docs/ambientes.md, seção 3).
+2. O Oracle aqui está com os índices de PROJUDI.LOG criados
+   (decisão 13): sem eles, a comparação seria desonesta.
+3. Isto mede o CAMINHO DE ESCRITA de um cliente. Não mede o efeito
+   de tirar a carga do banco transacional, que é o ganho real da
+   Solução 1 e depende de medição no ambiente de produção.
+4. Lote=1 é o modo síncrono, comparável ao que a LogPs faz hoje.
+   Lotes maiores só são atingíveis com a fila do BufferedLogSink,
+   cuja janela de perda está registrada em docs/decisoes.md, dec. 19.
+--------------------------------------------------------------------------------
