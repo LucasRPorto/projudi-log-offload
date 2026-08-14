@@ -205,7 +205,7 @@ Este relatório descreve o estado atual do projeto de modernização da arquitet
 \chapter*{LISTA DE FIGURAS}
 \addcontentsline{toc}{chapter}{LISTA DE FIGURAS}
 As figuras foram produzidas a partir de fontes PlantUML versionadas no diretório
-\texttt{figuras/}. Elas representam o fluxo arquitetural e os principais
+\texttt{}. Elas representam o fluxo arquitetural e os principais
 \textit{trade-offs} do MVP.
 
 
@@ -288,7 +288,7 @@ A \textit{stack} tecnológica do MVP foi definida ao final da fase de descoberta
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=\textwidth]{figuras/arquitetura-geral.png}
+  \includegraphics[width=\textwidth]{arquitetura-geral.png}
   \caption{Arquitetura geral do offload aplicacional e do pipeline CDC.}
   \label{fig:arquitetura-geral}
 \end{figure}
@@ -330,11 +330,11 @@ A comunicação com o ClickHouse utiliza o \textit{driver} oficial \texttt{com.c
 \label{qua:feature-flag}
 \begin{tabular}{lll}
 \toprule
-\textbf{Valor} & \textbf{Escrita principal} & \textbf{Uso}\
+\textbf{Valor} & \textbf{Escrita principal} & \textbf{Uso}\\
 \midrule
-\texttt{ORACLE} & Oracle & Compatibilidade e reversão\
-\texttt{CLICKHOUSE} & ClickHouse & Operação alvo\
-\texttt{AMBOS} & ClickHouse + Oracle & Período de sombra e comparação\
+\texttt{ORACLE} & Oracle & Compatibilidade e reversão\\
+\texttt{CLICKHOUSE} & ClickHouse & Operação alvo\\
+\texttt{AMBOS} & ClickHouse + Oracle & Período de sombra e comparação\\
 \bottomrule
 \end{tabular}
 \end{quadro}
@@ -346,7 +346,7 @@ compara as duas saídas sem reimplementar silenciosamente a semântica de
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.9\textwidth]{figuras/modelo-dados.png}
+  \includegraphics[width=0.9\textwidth]{modelo-dados.png}
   \caption{Separação lógica entre log aplicacional e histórico CDC.}
   \label{fig:modelo-dados}
 \end{figure}
@@ -455,7 +455,7 @@ escrever(registro):
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.72\textwidth]{figuras/falha-offload.png}
+  \includegraphics[width=0.72\textwidth]{falha-offload.png}
   \caption{Tratamento de fila cheia e indisponibilidade dos destinos.}
   \label{fig:falha-offload}
 \end{figure}
@@ -464,9 +464,27 @@ Como a fila é mantida em memória, uma finalização abrupta pode perder regist
 não enviados. Por isso, o componente expõe contadores de enviados, \textit{fallback}
 e perdidos, e o ciclo de vida deve chamar \texttt{encerrar()} para drenar a fila.
 
+No fluxo representado na Figura~\ref{fig:falha-offload}, o contador
+\texttt{PERDIDOS} é incrementado quando o lote não pode ser enviado ao ClickHouse
+após as retentativas e também não pode ser gravado no fallback Oracle. Essa
+situação indica perda potencial de registros de auditoria. Nesse caso, o
+componente também emite um log de nível \texttt{SEVERE}, sinalizando uma falha
+crítica que deve ser investigada pela equipe de operação.
+
 \section{FRENTE C — \textit{PIPELINE} CDC (SOLUÇÃO 2)}
 
 A Frente C cobre a configuração do \textit{pipeline} de captura de mudanças. As atividades incluem: a habilitação do \textit{supplemental logging} em modo \texttt{ALL COLUMNS} sobre a tabela \texttt{PROJUDI.PROC}; a configuração do conector Debezium Oracle, com \texttt{snapshot.mode=schema\_only} e \texttt{table.include.list} restrito à tabela alvo; a criação das três tabelas que compõem o caminho de ingestão no ClickHouse — \texttt{proc\_cdc\_kafka}, que utiliza o \textit{Kafka table engine}; \texttt{proc\_cdc}, que utiliza o motor \texttt{MergeTree} e armazena os eventos finais; e \texttt{proc\_cdc\_mv}, a \textit{materialized view} que faz o \textit{parsing} do JSON publicado pelo Debezium e materializa as colunas extraídas em \texttt{proc\_cdc}. Está prevista também a elaboração de documentação de extensão do \textit{pipeline} a outras tabelas, com os passos necessários para inclusão de uma nova tabela de domínio sem necessidade de alteração estrutural na solução.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.9\textwidth]{sequencia-cdc.png}
+  \caption{Sequência de captura, publicação e materialização de um evento CDC.}
+  \label{fig:sequencia-cdc}
+\end{figure}
+
+As figuras foram geradas a partir das fontes PlantUML correspondentes em
+\texttt{}. As fontes permanecem versionadas para permitir a
+regeneração das imagens antes do envio ao Overleaf.
 
 \section{PONTOS DE INTEGRAÇÃO ENTRE AS FRENTES}
 
