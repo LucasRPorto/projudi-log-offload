@@ -1,0 +1,28 @@
+@startuml
+left to right direction
+skinparam shadowing false
+skinparam componentStyle rectangle
+skinparam defaultFontName Arial
+rectangle "Projudi\nJava / LogPs" as app
+database "Oracle\nPROJUDI.LOG" as log
+database "Oracle\nPROJUDI.PROC" as proc
+component "ClickHouseLogWriter\n(fila + batch + retry)" as writer
+component "Debezium Oracle\nLogMiner" as dbz
+queue "Kafka\ntópico CDC" as kafka
+database "ClickHouse\nprojudi_logs.log_raw" as chlog
+database "ClickHouse\nprojudi_historico.proc_cdc" as chcdc
+app --> writer : registro aplicacional
+writer --> chlog : JDBC
+app --> log : legado / fallback
+proc --> dbz : redo log
+dbz --> kafka : eventos JSON
+kafka --> chcdc : Kafka engine + MV
+note bottom of chlog
+Preserva os 13 campos do log
+e os payloads sem parsing
+end note
+note bottom of chcdc
+Histórico append-only:
+c/u/d/r + SCN + timestamp
+end note
+@enduml

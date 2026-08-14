@@ -1,0 +1,516 @@
+\documentclass[12pt,letterpaper,oneside]{report}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[brazil]{babel}
+\usepackage{changepage}
+\usepackage{indentfirst}
+\usepackage{geometry}
+\geometry{
+  top=2.54cm,
+  bottom=2.54cm,
+  left=3.175cm,
+  right=3.175cm
+}
+
+\usepackage{newtxtext}
+\usepackage{newtxmath}
+
+\usepackage{setspace}
+\usepackage{ragged2e}
+\onehalfspacing
+
+\usepackage{titlesec}
+\titleformat{\chapter}[hang]
+  {\normalfont\bfseries\fontsize{14}{16}\selectfont}
+  {\thechapter}
+  {1em}
+  {\MakeUppercase}
+\titlespacing*{\chapter}{0pt}{24pt}{12pt}
+
+\titleformat{\section}[hang]
+  {\normalfont\bfseries\fontsize{13}{15}\selectfont}
+  {\thesection}
+  {1em}
+  {\MakeUppercase}
+\titlespacing*{\section}{0pt}{10pt}{6pt}
+
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{newfloat}
+\usepackage{caption}
+\usepackage{booktabs}
+\usepackage{listings}
+\usepackage{xcolor}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  columns=fullflexible,
+  keepspaces=true,
+  frame=single,
+  breaklines=true,
+  numbers=left,
+  numberstyle=\tiny\color{gray},
+  keywordstyle=\bfseries,
+  commentstyle=\itshape\color{gray}
+}
+
+\DeclareFloatingEnvironment[fileext=loq, listname={Lista de Quadros}, name=Quadro]{quadro}
+
+\DeclareCaptionLabelSeparator{endash}{\space\textendash\space}
+\captionsetup{
+  labelsep=endash,
+  font=normalsize,
+  justification=centering
+}
+\captionsetup[figure]{name=Figura}
+\captionsetup[table]{name=Tabela}
+\captionsetup[quadro]{name=QUADRO}
+
+\usepackage{tocloft}
+\renewcommand{\contentsname}{SUMÁRIO}
+
+\usepackage{etoolbox}
+
+\makeatletter
+\renewcommand{\tableofcontents}{%
+  \clearpage
+  \thispagestyle{plain}%
+  \begin{center}
+    {\bfseries\fontsize{14}{16}\selectfont SUMÁRIO}
+  \end{center}
+  \vspace{1.2cm}
+  \@starttoc{toc}%
+}
+\makeatother
+
+\usepackage[hidelinks]{hyperref}
+
+\makeatletter
+\newcommand{\conteudoLOF}{\@starttoc{lof}}
+\newcommand{\conteudoLOT}{\@starttoc{lot}}
+\newcommand{\conteudoLOQ}{\@starttoc{loq}}
+\makeatother
+
+\newcommand{\UFGLogoArquivo}{image_ufg.png}
+\newcommand{\UFGCidade}{Goiânia}
+\newcommand{\UFGAno}{2026}
+
+\newcommand{\TituloTrabalho}{Modernização da arquitetura de logs de auditoria do sistema Projudi: relatório do estado atual do projeto}
+\newcommand{\TipoDocumento}{Relatório de Andamento}
+
+\newcommand{\NomeUm}{LUCAS RODRIGUES PORTO}
+\newcommand{\NomeDois}{MAICON MAURICIO GONÇALVES DA SILVA}
+\newcommand{\NomeTres}{}
+
+\newcommand{\Orientador}{Prof.(a) Dr.(a) Nádia Felix Felipe da Silva}
+
+
+\begin{document}
+
+\begin{titlepage}
+\thispagestyle{empty}
+
+\begin{center}
+  \IfFileExists{\UFGLogoArquivo}{%
+    \includegraphics[width=4cm]{\UFGLogoArquivo}\par
+  }{%
+    \vspace*{2.2cm}
+  }
+
+  \vspace{0.6cm}
+
+  \textbf{UNIVERSIDADE FEDERAL DE GOIÁS}\\
+  \textbf{INSTITUTO DE INFORMÁTICA}\\
+  \textbf{ESPECIALIZAÇÃO EM RESIDÊNCIA EM TECNOLOGIA DA INFORMAÇÃO}
+\end{center}
+
+\vspace{4.0cm}
+
+\begin{center}
+  \NomeUm
+\end{center}
+
+\begin{center}
+  \NomeDois
+\end{center}
+
+\vspace{2.6cm}
+
+\begin{center}
+  {\textbf{\MakeUppercase{\TituloTrabalho}}}
+\end{center}
+
+\vfill
+
+\begin{center}
+  \TipoDocumento
+\end{center}
+
+\vfill
+
+\begin{center}
+  \UFGCidade\\
+  \UFGAno
+\end{center}
+
+\end{titlepage}
+
+\begin{titlepage}
+\thispagestyle{empty}
+
+\begin{center}
+  \textbf{UNIVERSIDADE FEDERAL DE GOIÁS}\\
+  \textbf{INSTITUTO DE INFORMÁTICA}\\
+  \textbf{ESPECIALIZAÇÃO EM RESIDÊNCIA EM TECNOLOGIA DA INFORMAÇÃO}
+\end{center}
+
+\vspace{4.0cm}
+
+\begin{center}
+  \NomeUm
+\end{center}
+
+\begin{center}
+  \NomeDois
+\end{center}
+
+\vspace{2.6cm}
+
+\begin{center}
+  {\textbf{\MakeUppercase{\TituloTrabalho}}}
+\end{center}
+
+\vspace{2.2cm}
+
+\noindent\hfill
+\begin{minipage}{0.62\textwidth}
+Relatório de andamento apresentado ao Programa de Pós-Graduação \textit{Lato Sensu} Especialização em Residência em Tecnologia da Informação do Instituto de Informática da Universidade Federal de Goiás, como instrumento parcial de acompanhamento das atividades do Trabalho de Conclusão de Curso. \\ \\
+Orientador(a): \Orientador
+\end{minipage}
+
+\end{titlepage}
+
+\setcounter{page}{3}
+\pagestyle{plain}
+
+
+\chapter*{RESUMO EXECUTIVO}
+\addcontentsline{toc}{chapter}{RESUMO EXECUTIVO}
+
+Este relatório descreve o estado atual do projeto de modernização da arquitetura de logs de auditoria do sistema Projudi, sistema processual eletrônico do Tribunal de Justiça do Estado de Goiás (TJGO). O projeto endereça três problemas estruturais da tabela central de auditoria, denominada \texttt{PROJUDI.LOG}: o custo crescente de armazenamento de quinze anos de histórico em banco transacional Oracle; o acoplamento síncrono entre operações de negócio do sistema e a escrita de auditoria, que faz com que qualquer degradação na tabela de log impacte a latência percebida pelo usuário final; e a fragilidade do formato semi-estruturado das colunas que armazenam o payload de cada evento, que acumulou três representações distintas ao longo de mais de uma década de evolução do sistema. A solução em construção combina duas frentes complementares: a refatoração da classe responsável pela escrita aplicacional dos logs, redirecionando-a para um banco analítico ClickHouse por meio de \textit{feature flag}; e a captura padronizada de mudanças em tabelas de domínio diretamente do \textit{redo log} do Oracle por meio do \textit{Change Data Capture} (CDC) implementado com Debezium e Apache Kafka. Encontram-se concluídas as fases de descoberta, caracterização empírica dos dados legados e desenho arquitetural, com decisões tecnológicas justificadas e três frentes de desenvolvimento delimitadas. O presente documento consolida as escolhas tecnológicas, suas justificativas, os problemas identificados durante a análise do sistema legado e a organização adotada para a fase de implementação, em curso na data de elaboração deste relatório.
+
+\clearpage
+
+\chapter*{LISTA DE FIGURAS}
+\addcontentsline{toc}{chapter}{LISTA DE FIGURAS}
+As figuras foram produzidas a partir de fontes PlantUML versionadas no diretório
+\texttt{figuras/}. Elas representam o fluxo arquitetural e os principais
+\textit{trade-offs} do MVP.
+
+
+\clearpage
+
+\chapter*{LISTA DE QUADROS E TABELAS}
+\addcontentsline{toc}{chapter}{LISTA DE QUADROS E TABELAS}
+Os quadros e tabelas do relatório são listados após a primeira compilação do
+documento.
+
+\clearpage
+
+\chapter*{LISTA DE SIGLAS E ABREVIATURAS}
+\addcontentsline{toc}{chapter}{LISTA DE SIGLAS E ABREVIATURAS}
+
+\begin{tabular}{@{}ll@{}}
+CDC & \textit{Change Data Capture}\\
+CNJ & Conselho Nacional de Justiça\\
+CLOB & \textit{Character Large Object}\\
+DBA & \textit{Database Administrator}\\
+DDL & \textit{Data Definition Language}\\
+DTO & \textit{Data Transfer Object}\\
+FK & \textit{Foreign Key} (chave estrangeira)\\
+JDBC & \textit{Java Database Connectivity}\\
+JSON & \textit{JavaScript Object Notation}\\
+MVP & \textit{Minimum Viable Product}\\
+OLTP & \textit{Online Transaction Processing}\\
+POC & \textit{Proof of Concept}\\
+SQL & \textit{Structured Query Language}\\
+TCC & Trabalho de Conclusão de Curso\\
+TJGO & Tribunal de Justiça do Estado de Goiás\\
+\end{tabular}
+
+\clearpage
+
+\tableofcontents
+\clearpage
+
+
+\chapter{INTRODUÇÃO}
+
+O Projudi é o sistema processual eletrônico utilizado pelo Tribunal de Justiça do Estado de Goiás (TJGO) e, na data deste relatório, encontra-se em operação contínua desde meados da década de 2000. O sistema sustenta a tramitação eletrônica de processos judiciais em todas as suas etapas — autuação, distribuição, movimentação, juntada de documentos, comunicações processuais, integrações com órgãos externos como o Conselho Nacional de Justiça (CNJ) e cumprimento de mandados —, atendendo magistrados, servidores, advogados e partes em volume diário expressivo de operações.
+
+Do ponto de vista arquitetural, o Projudi é um sistema Java legado de grande porte, organizado em camadas próprias (\texttt{Ne}, \texttt{Ps}, \texttt{Dt}, \texttt{Ct}, \texttt{DtGen}), ancorado em banco de dados Oracle e operado em ambiente \textit{on-premises} pelo TJGO. Sua longevidade, somada à criticidade do serviço prestado, fez com que componentes estruturais do sistema evoluíssem por acréscimo ao longo de mais de uma década, sem janelas para refatoração ampla.
+
+Um desses componentes é a tabela central de auditoria, denominada \texttt{PROJUDI.LOG}, que registra de forma centralizada toda alteração realizada sobre qualquer entidade do domínio do sistema. Cada criação de pendência, anexação de arquivo, movimentação processual, autenticação de usuário ou integração com o CNJ produz, na mesma transação da operação de negócio, um registro nessa tabela. A escrita é, portanto, síncrona à operação que a originou. Além disso, o conteúdo de cada evento é representado em duas colunas do tipo \textit{Character Large Object} (CLOB), \texttt{VALOR\_ATUAL} e \texttt{VALOR\_NOVO}, em formato de \textit{string} construído manualmente por método utilitário de cada \textit{Data Transfer Object} (DTO) do sistema.
+
+Três características desse arranjo configuram o problema endereçado pelo presente projeto. A primeira é o volume e o crescimento perpétuo da tabela: em ambiente de homologação foram medidos, em média, 3.748 eventos por dia, com picos próximos de 9.000 eventos em dias úteis, e estima-se ordem de grandeza superior em produção. Por convenção operacional, a cada virada de ano o histórico do exercício encerrado é fisicamente renomeado para uma tabela anual (\texttt{LOG\_2010}, \texttt{LOG\_2011}, e assim sucessivamente até \texttt{LOG\_2025}), de modo que o \textit{schema} do Oracle carrega, hoje, mais de quinze anos de histórico de auditoria em armazenamento transacional de alto custo. A segunda característica é o acoplamento entre a escrita do log e a transação \textit{Online Transaction Processing} (OLTP) que a originou: qualquer degradação de desempenho de entrada e saída sobre a tabela de auditoria reflete-se diretamente na latência percebida pelos usuários do sistema processual. A terceira característica é a fragilidade do formato dos \textit{payloads}, que combina três representações distintas em coexistência — uma sintaxe legada baseada em pares chave-valor delimitados por colchetes, blocos \textit{JavaScript Object Notation} (JSON) adicionados em integrações posteriores com o CNJ e texto livre para alguns tipos de eventos —, sem garantia de retrocompatibilidade entre versões.
+
+Diante desse cenário, o presente trabalho desenvolve uma prova de conceito (POC) para modernização da arquitetura de logs de auditoria do Projudi, combinando duas soluções tecnicamente independentes que compartilham a mesma infraestrutura analítica de destino: o \textit{offload} da escrita aplicacional, deslocando a gravação dos logs do Oracle para um banco analítico especializado; e a captura padronizada de mudanças (\textit{Change Data Capture} ou CDC) sobre tabelas de domínio, prescindindo de instrumentação aplicacional.
+
+\section{OBJETIVO GERAL}
+
+Desenvolver uma prova de conceito que demonstre a viabilidade técnica de modernizar a arquitetura de logs de auditoria do sistema Projudi, reduzindo o custo de armazenamento, desacoplando a auditoria do caminho transacional crítico e estabelecendo uma representação padronizada e consultável dos eventos auditados.
+
+\section{OBJETIVOS ESPECÍFICOS}
+
+São objetivos específicos do trabalho:
+
+\begin{enumerate}
+  \item Caracterizar empiricamente, com base em amostras reais, o volume, o crescimento e o formato dos \textit{payloads} atualmente registrados na tabela \texttt{PROJUDI.LOG}, de modo a fundamentar as decisões de arquitetura em evidências e não em premissas herdadas da documentação do sistema legado.
+  \item Selecionar e justificar uma \textit{stack} tecnológica capaz de atender simultaneamente aos requisitos de armazenamento eficiente, consulta analítica, captura de eventos a partir do banco de dados de origem, compatível com a infraestrutura disponível no TJGO.
+  \item Refatorar a camada aplicacional responsável pela escrita dos logs, de forma a permitir o redirecionamento da gravação para o novo destino analítico.
+  \item Estabelecer um \textit{pipeline} de captura de mudanças, baseado em \textit{Change Data Capture}, sobre uma tabela de domínio representativa, com documentação suficiente para extensão posterior a outras tabelas, sem dependência de modificações no código-fonte do Projudi.
+  \item Documentar a organização do desenvolvimento, as decisões arquiteturais e os problemas encontrados na fase de descoberta, de forma a constituir um registro técnico reaproveitável pela equipe do TJGO em iniciativas subsequentes.
+\end{enumerate}
+
+\section{JUSTIFICATIVA}
+
+A relevância do trabalho para o TJGO articula-se em três dimensões. Sob a dimensão financeira, o histórico de auditoria do Projudi consome, hoje, armazenamento transacional dimensionado para suportar processamento de alto desempenho e custo unitário elevado por gigabyte, ainda que esse histórico seja, em sua maior parte, somente-leitura e acessado de forma analítica e esporádica. A migração desse histórico para um banco analítico com compressão estimada entre quinze e vinte e cinco vezes sobre os CLOBs atuais representa redução significativa de \textit{footprint} sem perda de capacidade de consulta.
+
+Sob a dimensão operacional, o desacoplamento entre a escrita de auditoria e o caminho transacional do usuário elimina uma classe inteira de incidentes potenciais — degradações de desempenho de auditoria que se manifestam como lentidão do sistema processual —, com impacto direto na qualidade do serviço prestado a magistrados, servidores e usuários externos.
+
+Sob a dimensão arquitetural, a padronização do formato dos eventos auditados, hoje fragmentado em três representações coexistentes, cria fundamento para análises forenses, relatórios de conformidade e integrações futuras que atualmente são inviáveis ou exigem esforço desproporcional de \textit{parsing} ad hoc. Especificamente para um órgão judicial, em que a auditoria é não apenas requisito técnico mas também jurídico, a existência de uma representação canônica, versionada e consultável dos eventos do sistema é contribuição estrutural.
+
+
+\chapter{TECNOLOGIAS ADOTADAS}
+
+A \textit{stack} tecnológica do MVP foi definida ao final da fase de descoberta, após a caracterização empírica dos dados legados e a delimitação clara das duas soluções que compõem o projeto. As escolhas privilegiaram componentes amplamente adotados em arquiteturas de \textit{Change Data Capture} e \textit{data warehousing} analítico, com preferência por ferramentas operáveis em nó único e compatíveis com o ambiente de infraestrutura disponível no TJGO. Este capítulo apresenta cada componente da \textit{stack}, com foco em seu papel funcional na arquitetura; as razões que motivaram cada decisão são tratadas no capítulo seguinte.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{figuras/arquitetura-geral.png}
+  \caption{Arquitetura geral do offload aplicacional e do pipeline CDC.}
+  \label{fig:arquitetura-geral}
+\end{figure}
+
+Como mostra a Figura~\ref{fig:arquitetura-geral}, as soluções compartilham o
+mesmo destino físico, mas não o mesmo significado: o registro da aplicação
+expressa a intenção de auditoria, enquanto o CDC expressa a alteração observada
+no estado persistido.
+
+\section{BANCO DE DADOS ANALÍTICO DE DESTINO}
+
+O banco de dados analítico que recebe os logs migrados e os eventos capturados pelo \textit{pipeline} de CDC é o ClickHouse, em configuração de nó único. O ClickHouse é um sistema de gerenciamento de banco de dados colunar, com suporte nativo a \textit{Structured Query Language} (SQL), particionamento por data, compressão por coluna e \textit{schemas} convencionais, características que o aproximam funcionalmente de um banco analítico tradicional, sem exigir os componentes adicionais típicos de soluções baseadas em armazenamento de objetos.
+
+A modelagem do destino é dividida em dois \textit{schemas} independentes: \texttt{projudi\_logs}, que recebe os registros gravados pela aplicação refatorada e mantém o formato original dos \textit{payloads}; e \texttt{projudi\_historico}, que recebe os eventos parseados a partir do \textit{pipeline} de CDC. Ambos compartilham o mesmo nó físico do ClickHouse e podem ser correlacionados por consultas, mas resolvem problemas semanticamente distintos: o primeiro preserva a auditoria gerada pela camada aplicacional do Projudi; o segundo registra os efeitos observáveis no banco de dados de origem.
+
+\section{CAPTURA DE MUDANÇAS}
+
+A captura de mudanças sobre tabelas de domínio do Oracle é implementada com o conector Oracle do Debezium, que opera sobre o utilitário LogMiner do próprio Oracle. O LogMiner permite a leitura do \textit{redo log} do banco — registro físico das operações aplicadas pelo motor de armazenamento —, de modo que toda inserção, atualização ou remoção realizada sobre uma tabela cujo \textit{supplemental logging} esteja habilitado é convertida pelo Debezium em uma mensagem estruturada e publicada em um \textit{tópico} de mensageria, sem qualquer instrumentação no código-fonte da aplicação.
+
+No \textit{escopo} do MVP, o \textit{supplemental logging} em modo \texttt{ALL COLUMNS} é habilitado sobre a tabela \texttt{PROJUDI.PROC}, escolhida por sua centralidade no domínio do Projudi. O Debezium é configurado com \texttt{snapshot.mode=schema\_only}, evitando a varredura inicial completa da tabela, e com \texttt{table.include.list} restrito à \texttt{PROC}, de forma a manter o consumo de recursos do Oracle limitado e previsível durante a fase de prova de conceito.
+
+\section{BROKER DE MENSAGERIA}
+
+O \textit{broker} de mensageria adotado é o Apache Kafka, escolhido pela aderência à infraestrutura existente no TJGO e pela maturidade do ecossistema de \textit{connectors}, especialmente sua integração com o Debezium e com o ClickHouse. No ambiente do MVP, o Kafka opera em modo KRaft, em nó único, sem ZooKeeper. A camada de gerenciamento de \textit{connectors} é provida pelo Kafka Connect, executado como serviço dedicado dentro do mesmo ambiente Docker.
+
+\section{CONSUMIDOR DE CDC}
+
+O consumo dos eventos publicados pelo Debezium no Kafka é realizado pelo próprio ClickHouse, por meio do \textit{Kafka table engine} nativo. O \textit{engine} permite declarar, via SQL, uma tabela que se conecta diretamente a um tópico Kafka, especificando o formato das mensagens e a estratégia de \textit{offset}. Em conjunto com uma \textit{materialized view}, a tabela espelho parseia o JSON enviado pelo Debezium, extrai os campos relevantes e os materializa em uma tabela final estruturada com motor \texttt{MergeTree}, o motor padrão do ClickHouse para tabelas analíticas com suporte a particionamento, ordenação e compactação em segundo plano.
+
+\section{COMPONENTE APLICACIONAL DA SOLUÇÃO DE \textit{OFFLOAD}}
+
+O componente aplicacional responsável pela escrita aplicacional dos logs no novo destino é implementado em Java puro, sem dependência de \textit{frameworks} de inversão de controle ou injeção de dependências. Estruturalmente, é composto por quatro classes principais: \texttt{ClickHouseLogWriter}, responsável pela conexão e escrita JDBC contra o ClickHouse; \texttt{BatchAccumulator}, que acumula registros em memória e realiza \textit{flush} por tamanho ou por tempo; \texttt{RetryPolicy}, que encapsula a lógica de tentativas em caso de falha transiente; e a refatoração da classe \texttt{LogPs} do próprio Projudi, com o ponto de comutação entre o destino Oracle atual e o novo destino ClickHouse.
+
+A comunicação com o ClickHouse utiliza o \textit{driver} oficial \texttt{com.clickhouse:clickhouse-jdbc}, mantido pelo fabricante. A comutação entre os dois destinos é controlada por \textit{feature flag}, configurada externamente ao binário do sistema.
+
+\begin{quadro}[H]
+\centering
+\caption{Estados da feature flag de destino.}
+\label{qua:feature-flag}
+\begin{tabular}{lll}
+\toprule
+\textbf{Valor} & \textbf{Escrita principal} & \textbf{Uso}\
+\midrule
+\texttt{ORACLE} & Oracle & Compatibilidade e reversão\
+\texttt{CLICKHOUSE} & ClickHouse & Operação alvo\
+\texttt{AMBOS} & ClickHouse + Oracle & Período de sombra e comparação\
+\bottomrule
+\end{tabular}
+\end{quadro}
+
+No modo \texttt{AMBOS}, o Oracle continua sendo escrito pelo caminho legado e
+o ClickHouse recebe a cópia produzida pelo novo componente. Assim, a validação
+compara as duas saídas sem reimplementar silenciosamente a semântica de
+\texttt{LogPs}.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.9\textwidth]{figuras/modelo-dados.png}
+  \caption{Separação lógica entre log aplicacional e histórico CDC.}
+  \label{fig:modelo-dados}
+\end{figure}
+
+\section{ORQUESTRAÇÃO E AMBIENTE DE EXECUÇÃO}
+
+O ambiente de desenvolvimento e o ambiente-alvo do MVP são definidos por um \textit{compose} Docker único, que provisiona o ClickHouse, o Apache Kafka em modo KRaft, o Kafka Connect com o conector Debezium Oracle e uma instância Oracle XE destinada a testes locais. A escolha por Docker Compose, em detrimento de orquestradores mais elaborados, decorre do requisito explícito de operação em nó único, confirmado em alinhamento prévio com a equipe de infraestrutura do TJGO.
+
+
+\chapter{JUSTIFICATIVAS DAS ESCOLHAS TECNOLÓGICAS}
+
+Cada componente da \textit{stack} descrita no capítulo anterior foi confrontado com pelo menos uma alternativa plausível, descartada por motivos que combinam aderência ao problema técnico, custo operacional e compatibilidade com o ambiente existente. Este capítulo expõe o raciocínio que conduziu a cada escolha, incluindo as alternativas rejeitadas, por entender que a explicitação dos caminhos não adotados é parte integrante do registro arquitetural.
+
+\section{CLICKHOUSE COMO BANCO ANALÍTICO}
+
+A escolha do ClickHouse para o destino analítico apoia-se em quatro propriedades observadas no contexto do problema. A primeira é a compressão por coluna sobre dados textuais: ensaios preliminares sobre amostras do conteúdo dos CLOBs atuais sugerem ganhos de compressão entre quinze e vinte e cinco vezes em relação ao armazenamento Oracle, especialmente quando associados ao codec \texttt{ZSTD} aplicado às colunas de \textit{payload} e ao codec \texttt{Delta} sobre identificadores numéricos sequenciais. A segunda propriedade é o particionamento nativo por data, que permite políticas de retenção e \textit{drop} de partições inteiras em escala de segundos, sem a sobrecarga típica de \texttt{DELETE} em tabelas transacionais. A terceira propriedade é o \textit{Kafka table engine}, que dispensa a implementação de um consumidor próprio para a solução de CDC. A quarta é o \textit{Oracle table engine}, que, ainda que fora do \textit{escopo} do MVP, abre caminho para a migração futura do histórico anual (\texttt{LOG\_2010} a \texttt{LOG\_2025}) por \texttt{INSERT \dots\ SELECT} direto do Oracle, sem ferramentas intermediárias de ETL.
+
+Foram consideradas e descartadas três alternativas. O PostgreSQL, ainda que tecnicamente capaz de armazenar o conteúdo, é projetado para cargas OLTP e apresenta desempenho analítico inferior em consultas com agregação massiva, além de compressão sobre CLOBs inferior à proporcionada pelo ClickHouse. O DuckDB, apesar de competitivo em desempenho analítico, é um motor embarcado e não suporta múltiplos clientes concorrentes via rede, característica incompatível com o uso pretendido. Por fim, soluções baseadas em formatos de \textit{table} sobre armazenamento de objetos, como Apache Iceberg ou Delta Lake, ainda que adequadas a arquiteturas de \textit{data lake} de grande porte, exigiriam a introdução de MinIO ou S3 para armazenamento, Hive Metastore para metadados, Trino ou Spark para consulta e ferramentas de compactação adicionais, complexidade desproporcional ao requisito de operação em nó único confirmado para este projeto.
+
+\section{DEBEZIUM E LOGMINER COMO MECANISMO DE CDC}
+
+A escolha do Debezium sobre LogMiner para captura de mudanças no Oracle foi orientada por dois critérios principais. O primeiro é a inexistência de custo de licenciamento adicional: o LogMiner é utilitário nativo do Oracle e o Debezium é distribuído sob licença permissiva. A alternativa baseada em XStream, embora reconhecidamente superior em latência e em consumo de CPU no banco de origem, exige licença paga do Oracle, o que tornaria a solução economicamente impraticável para um órgão público. O segundo critério é o controle granular sobre o \textit{supplemental logging} por tabela, que permite limitar o impacto da captura apenas às tabelas efetivamente monitoradas, mantendo o restante do \textit{schema} fora do mecanismo de captura.
+
+Reconhecem-se, como limitações conhecidas, latência típica entre cinco e trinta segundos entre a alteração no Oracle e a chegada do evento ao Kafka, consumo adicional de CPU no banco de origem e a necessidade de \textit{tuning} específico para volumes muito altos. Para o \textit{escopo} do MVP, restrito a uma tabela de domínio, essas limitações são aceitáveis e estão documentadas como pontos de atenção para a fase de promoção para produção.
+
+\section{APACHE KAFKA COMO \textit{BROKER}}
+
+A escolha do Apache Kafka como \textit{broker} de mensageria privilegia o alinhamento com a infraestrutura e a expertise já existentes na equipe do TJGO, em detrimento de alternativas tecnicamente equivalentes, como o Redpanda. Embora o Redpanda apresente menor \textit{footprint} operacional e dispense o ZooKeeper, a familiaridade da equipe com o Kafka, o ecossistema maduro de \textit{connectors} e a integração nativa tanto com o Debezium quanto com o ClickHouse compensam o custo operacional adicional. O \textit{trade-off}, portanto, foi avaliado e explicitamente assumido.
+
+\section{\textit{KAFKA TABLE ENGINE} EM LUGAR DE CONSUMIDOR DEDICADO}
+
+O consumo de eventos CDC poderia ser implementado por um serviço Java dedicado, ouvindo o Kafka e gravando no ClickHouse via JDBC. Optou-se, contudo, pelo \textit{Kafka table engine} nativo do ClickHouse, que dispensa qualquer código aplicacional na camada de consumo: a integração é declarada inteiramente em SQL, por meio de uma tabela com \textit{engine} Kafka acoplada a uma \textit{materialized view} que realiza o \textit{parsing} do JSON enviado pelo Debezium e materializa os campos extraídos em uma tabela final \texttt{MergeTree}. A redução de superfície operacional e a eliminação de um serviço a ser monitorado, escalado e atualizado justificaram a escolha. O \textit{trade-off} reconhecido é a dificuldade ligeiramente maior de \textit{debugging} em casos de incompatibilidade de \textit{schema}, mitigada pela natureza estável do \textit{payload} produzido pelo Debezium.
+
+\section{JAVA PURO PARA O COMPONENTE DE \textit{OFFLOAD}}
+
+O componente aplicacional da solução de \textit{offload}, descrito no capítulo anterior, é estruturalmente simples — quatro classes, sem servidor de aplicação, sem ciclo de vida complexo. A introdução do Spring Boot acarretaria a inclusão de aproximadamente oitenta megabytes adicionais de \textit{classpath} apenas para ganhar \textit{auto-configuração} de funcionalidades que, neste contexto, não são utilizadas. Além disso, o sistema Projudi é operado em Java puro há mais de uma década, e a equipe do TJGO possui familiaridade consolidada com esse modelo. A escolha por Java puro, portanto, alinha-se ao código legado em que o componente será integrado e evita acrescentar uma dependência transversal de \textit{framework} que precisaria ser sustentada pela equipe ao longo do tempo.
+
+\section{DOCKER COMPOSE COMO PROVA DE CONCEITO}
+
+A orquestração via Docker Compose foi escolhida pela reprodutibilidade que proporciona — todo o ambiente é provisionado por um único comando —, pela aderência ao requisito explícito de operação em nó único, e pela ausência de necessidade de mecanismos de escalonamento horizontal automático nesta fase. Alternativas como Kubernetes foram consideradas e descartadas por introduzirem complexidade operacional incompatível com o porte do MVP e com a operação prevista em ambiente do TJGO.
+
+
+\chapter{PROBLEMAS ENCONTRADOS NA ANÁLISE E DESENHO}
+
+A fase de descoberta do projeto produziu, paralelamente ao desenho arquitetural, um conjunto de constatações sobre o sistema legado que merecem registro, por dois motivos: refletem o estado atual da base de produção do Projudi, com implicações diretas para as duas soluções em desenvolvimento; e ilustram a metodologia adotada, ancorada em validação empírica das hipóteses antes de qualquer decisão de arquitetura. Este capítulo apresenta os principais problemas identificados, organizados em categorias temáticas.
+
+\section{DESCOBERTAS SOBRE O \textit{SCHEMA} DE AUDITORIA}
+
+A primeira hipótese sobre a origem dos dados, formulada com base na nomenclatura das tabelas existentes no \textit{schema} \texttt{PROJUDI}, apontava para uma tabela chamada \texttt{LOG\_NEW}, cujo nome sugeria tratar-se da versão mais recente do registro de auditoria. A verificação empírica desta hipótese, por meio de consulta direta ao maior valor da coluna de \textit{timestamp} da tabela, revelou que \texttt{LOG\_NEW} não recebe escrita desde 30 de abril de 2014. A tabela efetivamente ativa é \texttt{PROJUDI.LOG}, ao passo que as tabelas \texttt{LOG\_2010} até \texttt{LOG\_2025} são arquivos anuais gerados por procedimento operacional executado pela equipe de banco de dados na virada de cada exercício. O equívoco mostra que a nomenclatura de objetos em sistemas legados não pode ser tomada como premissa sem evidência, sobretudo quando o sistema acumulou camadas sucessivas de manutenção ao longo de mais de uma década.
+
+A análise da definição da tabela \texttt{PROJUDI.LOG} revelou ainda que as restrições de chave estrangeira originalmente declaradas — \texttt{LOG\_NEW\_LOGTIPO\_FK1}, que apontaria para \texttt{LOG\_TIPO}, e \texttt{LOG\_NEW\_USUARIO\_FK1}, que apontaria para a tabela de usuários — encontram-se com \textit{status} \texttt{DISABLED}. Trata-se de decisão comum em tabelas de alto \textit{throughput}, em que a validação síncrona de integridade referencial passa a ser um custo desproporcional. Para a nova arquitetura, contudo, a desabilitação dessas restrições no Oracle implica que a validação de integridade referencial — em particular, a correspondência entre identificadores de tipo de evento e o dicionário em \texttt{LOG\_TIPO} — não pode ser delegada ao banco de origem, e deverá ser implementada explicitamente na camada de ingestão do destino analítico ou aceita como dado herdado, conforme decisão registrada nos pontos de extensão do MVP.
+
+\section{DESCOBERTAS SOBRE O FORMATO DOS \textit{PAYLOADS}}
+
+A premissa inicial sobre o conteúdo das colunas \texttt{VALOR\_ATUAL} e \texttt{VALOR\_NOVO} era a de que todo \textit{payload} seguiria o formato proprietário baseado em pares chave-valor delimitados por colchetes, com sufixo \texttt{[Origem:projudi]}, conforme documentado no método \texttt{getPropriedades()} comum às classes DTO do sistema. A análise estatística sobre uma amostra de mil \textit{payloads} reais, extraídos do ambiente de homologação na data de 15 de maio de 2026, revelou um cenário mais complexo. Convivem ativamente três formatos: a sintaxe legada baseada em colchetes, que responde por aproximadamente 45\% dos registros; \textit{payloads} em JSON aninhado, introduzidos a partir de 2022 em integrações com o CNJ — em particular nos eventos relacionados ao Domicílio Judicial Eletrônico e ao Diário de Justiça Eletrônico Nacional —, que correspondem a cerca de 14,4\% dos registros; e \textit{strings} em texto livre para eventos como autenticação de usuário, que respondem por aproximadamente 4,2\%, complementados ainda por variantes vazias e formatos parciais. Todos esses formatos preservam, contudo, o sufixo \texttt{[Origem:xxx]}, evidência de que o ponto de injeção dessa marcação, implementado em \texttt{LogDt.setOrigem()}, jamais foi removido das versões mais recentes do código.
+
+A constatação reforça a tese de que sistemas legados em operação contínua evoluem por acréscimo, e não por substituição: cada novo formato adicionado conviveu com os anteriores, sem ritual de migração ou normalização. A decisão arquitetural, em consequência, foi a de \textbf{preservar os \textit{payloads} no formato original} durante a solução de \textit{offload} (Solução 1), de modo a não introduzir transformações destrutivas no caminho crítico de escrita, transferindo qualquer \textit{parsing} estruturado para a Solução 2, na qual o formato dos eventos é determinado pelo próprio Debezium e é, portanto, previsível.
+
+\section{DESCOBERTAS SOBRE A EVOLUÇÃO DO DICIONÁRIO DE EVENTOS}
+
+A constante \texttt{LogTipoDt.Logar}, que representa o evento de autenticação no sistema, foi renumerada ao longo do tempo: registros datados de 2014 referem-se ao tipo \texttt{TIPO=4}, enquanto registros de 2026 referem-se ao tipo \texttt{TIPO=96}. Novos eventos foram adicionados ao dicionário em diversos momentos, com destaque para o \texttt{TIPO=111}, que representa eventos do Domicílio Judicial Eletrônico, e para o \texttt{TIPO=113}, que representa eventos do Diário de Justiça Eletrônico Nacional. A tabela de catálogo \texttt{LOG\_TIPO} contém, na data deste relatório, 109 tipos catalogados.
+
+A evolução do dicionário de eventos sem garantia de retrocompatibilidade tem implicação operacional concreta: qualquer consulta analítica de longo prazo, que cruze registros de 2014 e de 2026, precisa internalizar o mapeamento histórico entre os identificadores de tipo, sob risco de produzir resultados incorretos por concorrência semântica entre eventos antigos e novos. Como medida mitigatória, a modelagem do destino analítico prevê o armazenamento do identificador de tipo \textit{tal como gravado no momento da escrita}, sem reescrita retroativa, e a documentação separada do mapeamento histórico.
+
+\section{RESTRIÇÕES OPERACIONAIS}
+
+Duas restrições operacionais foram identificadas na fase de descoberta e devidamente documentadas. A primeira é o acesso restrito à tabela \texttt{PROJUDI.LOG} em ambiente de produção, característica esperada para a tabela central de auditoria do tribunal e justificada do ponto de vista de segurança da informação. O MVP foi consequentemente desenhado para validação contra o ambiente de homologação, com a promoção para produção tratada como item operacional separado, sujeito a planejamento conjunto com a equipe de infraestrutura.
+
+A segunda restrição é o ritual anual de virada de tabela, no qual, na data de 1º de janeiro de cada ano, a equipe de banco de dados renomeia a tabela viva para a tabela anual correspondente e cria a tabela do novo exercício. Em homologação, esse ritual não ocorre, de modo que o MVP pode ser construído sem considerá-lo. Para promoção a produção, contudo, a Solução 2 precisará de mecanismo de reconfiguração do parâmetro \texttt{table.include.list} do Debezium, ou de uma estratégia de \textit{include pattern} resiliente a essa renomeação. O ponto está documentado como item operacional, não bloqueia o MVP, mas integra obrigatoriamente o plano de promoção.
+
+\section{DECISÃO ARQUITETURAL REVERTIDA}
+
+Em iteração anterior do desenho arquitetural, considerou-se unificar as duas soluções por meio de uma abordagem única: captura de mudanças via Debezium aplicada à própria tabela \texttt{PROJUDI.LOG}, eliminando a necessidade de refatoração aplicacional. A análise subsequente revelou que essa unificação não atendia adequadamente a nenhum dos dois problemas que motivaram o projeto. Por um lado, manteria a escrita síncrona em \texttt{PROJUDI.LOG} no caminho transacional crítico, não resolvendo o problema de acoplamento OLTP. Por outro, capturaria os \textit{payloads} no formato fragmentado em três representações descrito anteriormente, transferindo para o destino analítico o problema de \textit{parsing} heterogêneo que se buscava eliminar.
+
+A revisão dessa decisão estabeleceu de forma definitiva que as duas soluções resolvem problemas distintos, exigem mecanismos distintos e devem permanecer arquiteturalmente independentes: a Solução 1 desloca a auditoria gerada pela aplicação, preservando a semântica de “intenção do usuário” registrada pelo Projudi; a Solução 2 captura mudanças observáveis no banco de dados, com semântica de “efeito sobre o estado persistido”, em formato padronizado pelo Debezium. Durante o MVP, uma operação de \texttt{UPDATE} sobre a tabela \texttt{PROC} dispara ambas as auditorias simultaneamente, evidenciando, em validação cruzada, que se trata de camadas semanticamente complementares e não redundantes.
+
+
+\chapter{ORGANIZAÇÃO DO DESENVOLVIMENTO}
+
+A construção do MVP foi organizada em três frentes paralelas, cada uma com escopo delimitado, dependências explícitas e pontos de integração formalizados. A separação reflete tanto a independência arquitetural entre as duas soluções quanto a necessidade de avançar simultaneamente em componentes que não possuem dependência funcional entre si. Este capítulo descreve a organização adotada, os pontos de integração entre as frentes e a metodologia que orientou a fase de descoberta e continua orientando a fase atual de desenvolvimento.
+
+\section{FRENTE A — INFRAESTRUTURA CLICKHOUSE}
+
+A Frente A é a fundação de infraestrutura sobre a qual as demais se apoiam. Seu escopo compreende a configuração do ambiente \textit{compose} Docker com todos os serviços necessários — ClickHouse, Kafka em modo KRaft, Kafka Connect com o conector Debezium e Oracle XE para testes locais —, a especificação das \textit{Data Definition Languages} (DDL) dos dois \textit{schemas} de destino, \texttt{projudi\_logs} e \texttt{projudi\_historico}, e a parametrização inicial dos motores das tabelas espelho, com particionamento, ordenação e codecs de compressão definidos: \texttt{ZSTD} sobre as colunas que armazenam o \textit{payload} dos eventos e \texttt{Delta} sobre as colunas de identificadores numéricos sequenciais. A política de retenção foi alinhada ao comportamento atual do Oracle, no qual o histórico é mantido indefinidamente, sem prejuízo de revisão futura.
+
+\section{FRENTE B — REFATORAÇÃO DO LOGPS (SOLUÇÃO 1)}
+
+A Frente B trata da refatoração da classe \texttt{LogPs} do Projudi e da introdução das classes auxiliares descritas no capítulo de tecnologias adotadas. As atividades incluem: a implementação de \texttt{ClickHouseLogWriter} sobre o \textit{driver} JDBC oficial; a implementação de \texttt{BatchAccumulator}, com política de \textit{flush} por tamanho de \textit{batch} ou por tempo decorrido desde o primeiro registro acumulado; a implementação de \texttt{RetryPolicy} com retentativa em caso de falha transiente; e a integração da \textit{feature flag} responsável pela comutação entre o destino Oracle atual e o novo destino ClickHouse, sem necessidade de \textit{deploy} adicional do sistema. Inclui ainda o mapeamento de tipos entre Oracle e ClickHouse — \texttt{NUMBER(24)} para \texttt{UInt64} ou \texttt{Decimal}, conforme a coluna; \texttt{DATE} para \texttt{DateTime}; \texttt{CLOB} para \texttt{String} — e a bateria de testes unitários cobrindo inserção simples, inserção em \textit{batch}, \textit{flush} por \textit{timeout}, comportamento de \textit{retry} sob falha e a corretude do mapeamento de tipos.
+
+O comportamento pode ser resumido pelo seguinte pseudocódigo:
+\begin{quadro}[H]
+\centering
+\caption{Pseudocódigo simplificado do envio assíncrono.}
+\label{qua:pseudocodigo}
+\begin{lstlisting}[language={}]
+escrever(registro):
+    se fila.estaCheia(): fallbackOracle.escrever(registro); retornar
+    fila.adicionar(registro)
+    se lotePronto() ou expirou(timeout):
+        lote = fila.removerTudo()
+        se nao enviarComRetry(clickhouse, lote):
+            se oracle.disponivel(): oracle.gravar(lote)
+            senao: metricas.incrementar("PERDIDOS")
+\end{lstlisting}
+\end{quadro}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.72\textwidth]{figuras/falha-offload.png}
+  \caption{Tratamento de fila cheia e indisponibilidade dos destinos.}
+  \label{fig:falha-offload}
+\end{figure}
+
+Como a fila é mantida em memória, uma finalização abrupta pode perder registros
+não enviados. Por isso, o componente expõe contadores de enviados, \textit{fallback}
+e perdidos, e o ciclo de vida deve chamar \texttt{encerrar()} para drenar a fila.
+
+\section{FRENTE C — \textit{PIPELINE} CDC (SOLUÇÃO 2)}
+
+A Frente C cobre a configuração do \textit{pipeline} de captura de mudanças. As atividades incluem: a habilitação do \textit{supplemental logging} em modo \texttt{ALL COLUMNS} sobre a tabela \texttt{PROJUDI.PROC}; a configuração do conector Debezium Oracle, com \texttt{snapshot.mode=schema\_only} e \texttt{table.include.list} restrito à tabela alvo; a criação das três tabelas que compõem o caminho de ingestão no ClickHouse — \texttt{proc\_cdc\_kafka}, que utiliza o \textit{Kafka table engine}; \texttt{proc\_cdc}, que utiliza o motor \texttt{MergeTree} e armazena os eventos finais; e \texttt{proc\_cdc\_mv}, a \textit{materialized view} que faz o \textit{parsing} do JSON publicado pelo Debezium e materializa as colunas extraídas em \texttt{proc\_cdc}. Está prevista também a elaboração de documentação de extensão do \textit{pipeline} a outras tabelas, com os passos necessários para inclusão de uma nova tabela de domínio sem necessidade de alteração estrutural na solução.
+
+\section{PONTOS DE INTEGRAÇÃO ENTRE AS FRENTES}
+
+As três frentes são coordenadas por dependências explícitas. A Frente A precede as demais, uma vez que as Frentes B e C consomem os \textit{schemas} e as tabelas por ela provisionados. As Frentes B e C, por sua vez, são independentes entre si: a refatoração da camada aplicacional não interage funcionalmente com a configuração do \textit{pipeline} de CDC, e cada uma pode avançar em ritmo próprio. O ponto de integração entre todas as frentes é o cenário de validação cruzada, no qual uma operação de \texttt{UPDATE} sobre a tabela \texttt{PROC} deve produzir, simultaneamente, um registro no \textit{schema} \texttt{projudi\_logs} (capturado pela aplicação refatorada, via Frente B) e um registro no \textit{schema} \texttt{projudi\_historico} (capturado pelo \textit{pipeline} CDC, via Frente C), permitindo verificação ponta a ponta da arquitetura.
+
+\section{METODOLOGIA ADOTADA NA FASE DE DESCOBERTA}
+
+A fase de descoberta, anterior ao início das três frentes, foi conduzida segundo um princípio metodológico que merece registro próprio: \textbf{validação empírica antes do desenho}. Cada hipótese formulada sobre o sistema legado — desde a identificação da tabela ativa de auditoria, passando pela caracterização do formato dos \textit{payloads}, até o levantamento do dicionário de eventos — foi confirmada por meio de análise direta de dados reais, leitura do código-fonte do Projudi e consulta a metadados do banco de dados de origem, antes de ser incorporada como premissa de arquitetura. Quando hipóteses se mostraram incorretas, como no caso da tabela \texttt{LOG\_NEW}, o desenho foi corrigido em iteração seguinte.
+
+O cruzamento entre amostras de períodos distintos — em particular, registros datados de 2014 e de 2026 — foi instrumento sistemático para a identificação de evoluções silenciosas do sistema, como a renumeração da constante \texttt{LogTipoDt.Logar} e a introdução posterior de \textit{payloads} em formato JSON. Sem esse cruzamento, características relevantes do sistema legado teriam permanecido invisíveis no processo de descoberta.
+
+A análise foi viabilizada pelo uso intensivo de \textit{Model Context Protocol} (MCP), que possibilitou o acesso programático tanto à estrutura e ao conteúdo do banco de dados Oracle quanto ao código-fonte Java do sistema legado, permitindo análises de escala que seriam impraticáveis em inspeção puramente manual. O uso desse instrumental constitui contribuição metodológica do projeto, replicável em iniciativas futuras de modernização de sistemas legados de porte equivalente.
+
+\section{ESTADO ATUAL E PRÓXIMAS ETAPAS}
+
+Na data deste relatório, encontram-se concluídas a fase de descoberta e a elaboração do fluxo arquitetural, com decisões tecnológicas justificadas, problemas estruturais do sistema legado caracterizados e três frentes de desenvolvimento delimitadas. Encontra-se em andamento a fase de desenvolvimento do MVP, com avanço paralelo nas três frentes descritas neste capítulo. Permanecem como etapas futuras, fora do escopo deste relatório de andamento, a integração efetiva das três frentes  através de prova de conceito em ambiente de desenvolvimento, o documento técnico consolidado da prova de conceito e o plano operacional de promoção para o ambiente de produção.
+
+
+\chapter{CONSIDERAÇÕES FINAIS}
+
+Este relatório consolidou o estado atual do projeto de modernização da arquitetura de logs de auditoria do sistema Projudi, em sua fase de planejamento concluída e desenvolvimento em curso. Os capítulos anteriores apresentaram as tecnologias selecionadas para o MVP, as justificativas que orientaram cada escolha em contraste com as alternativas descartadas, os problemas estruturais identificados na fase de descoberta do sistema legado e a organização das três frentes paralelas de desenvolvimento adotadas.
+
+Cabe registrar duas contribuições preliminares já consolidadas no projeto, mesmo antes da entrega do MVP. A primeira é a caracterização empírica da tabela central de auditoria do Projudi, incluindo o volume diário em ambiente de homologação, a distribuição dos formatos de \textit{payload} em coexistência, o estado das restrições de integridade referencial e a evolução do dicionário de eventos ao longo de mais de uma década. Essa caracterização constitui registro técnico utilizável pela equipe do TJGO em decisões futuras sobre auditoria, conformidade e análise forense, independentemente do destino final da prova de conceito. A segunda é a explicitação metodológica do processo de descoberta, ancorado em validação empírica e cruzamento de amostras de períodos distintos, replicável em iniciativas semelhantes de análise de sistemas legados.
+
+Como limitações deste relatório, registra-se que o MVP é descrito em seu \textit{estado de planejamento e desenvolvimento em curso}, e não em seu \textit{estado de validação operacional}. Métricas de desempenho, taxa de compressão efetivamente observada, latência ponta a ponta do \textit{pipeline} CDC e comportamento sob carga representativa não estão disponíveis na data deste relatório e serão objeto do documento técnico consolidado da prova de conceito, ao final da fase de desenvolvimento. Limitações inerentes à \textit{stack} escolhida — em particular, a latência típica do Debezium sobre LogMiner e a operação em nó único do ClickHouse — encontram-se documentadas no capítulo de justificativas e deverão ser reavaliadas em fase posterior, conforme os requisitos de produção do TJGO.
+
+Como possibilidades de continuidade, destacam-se a extensão do \textit{pipeline} de CDC para tabelas de domínio adicionais do Projudi, a migração do histórico anual atualmente armazenado em Oracle (\texttt{LOG\_2010} a \texttt{LOG\_2025}) para o novo destino analítico por \texttt{INSERT \dots\ SELECT} direto, e o desenvolvimento de interfaces analíticas e relatórios sobre o histórico modernizado, alinhados às necessidades de auditoria, conformidade e gestão do tribunal.
+
+
+\chapter*{REFERÊNCIAS}
+\addcontentsline{toc}{chapter}{REFERÊNCIAS}
+
+\noindent CLICKHOUSE INC. \textbf{ClickHouse Documentation}. [\textit{S. l.}]: ClickHouse, 2026. Disponível em: <https://clickhouse.com/docs>. Acesso em: 16 maio 2026. \\
+
+\noindent DEBEZIUM COMMUNITY. \textbf{Debezium Documentation: Oracle Connector}. [\textit{S. l.}]: Red Hat, 2026. Disponível em: <https://debezium.io/documentation/reference/stable/connectors/oracle.html>. Acesso em: 16 maio 2026. \\
+
+\noindent KLEPPMANN, M. \textbf{Designing Data-Intensive Applications: the big ideas behind reliable, scalable, and maintainable systems}. Sebastopol: O'Reilly Media, 2017. \\
+
+\noindent APACHE SOFTWARE FOUNDATION. \textbf{Apache Kafka Documentation}. [\textit{S. l.}]: Apache Software Foundation, 2026. Disponível em: <https://kafka.apache.org/documentation/>. Acesso em: 16 maio 2026. \\
+
+\noindent ORACLE CORPORATION. \textbf{Oracle Database Utilities: Using LogMiner to Analyze Redo Log Files}. Redwood City: Oracle, 2024. \\
+
+\noindent ASSOCIAÇÃO BRASILEIRA DE NORMAS TÉCNICAS. \textbf{NBR 6023}: informação e documentação — referências — elaboração. Rio de Janeiro: ABNT, 2018.
+
+\clearpage
+
+\end{document}

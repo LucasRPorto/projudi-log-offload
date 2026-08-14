@@ -1,0 +1,28 @@
+@startuml
+skinparam shadowing false
+skinparam defaultFontName Arial
+entity "log_raw" as LR {
+  * ID_LOG : UInt64
+  --
+  HORA : DateTime
+  ID_USU : UInt64
+  TABELA : String
+  VALOR_ATUAL : String
+  VALOR_NOVO : String
+}
+entity "proc_cdc" as PC {
+  * ID_PROC : UInt64
+  * cdc_ts_ms : UInt64
+  --
+  cdc_op : c/u/d/r
+  cdc_scn : String
+  ingestion_ts : DateTime
+  colunas de PROC : Nullable
+}
+LR .. "intenção da aplicação" : projudi_logs
+PC .. "efeito persistido" : projudi_historico
+note bottom
+As tabelas não são unificadas:
+uma operação pode gerar os dois eventos.
+end note
+@enduml

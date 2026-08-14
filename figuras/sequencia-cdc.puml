@@ -1,0 +1,21 @@
+@startuml
+skinparam shadowing false
+skinparam defaultFontName Arial
+actor Aplicacao
+participant Oracle
+participant "Debezium / LogMiner" as D
+queue Kafka
+participant "ClickHouse MV" as MV
+database proc_cdc
+Aplicacao -> Oracle : UPDATE PROC
+Oracle -> Oracle : grava redo + SCN
+D -> Oracle : lê redo
+D -> Kafka : publica {op,before,after,source}
+Kafka -> MV : entrega mensagem
+alt op = c/u/r
+  MV -> proc_cdc : materializa after
+else op = d
+  MV -> proc_cdc : materializa before
+end
+proc_cdc --> Aplicacao : consulta do historico
+@enduml

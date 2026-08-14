@@ -1,0 +1,27 @@
+@startuml
+skinparam shadowing false
+skinparam defaultFontName Arial
+start
+:receber registro;
+:adicionar à fila;
+if (fila cheia?) then (sim)
+  :gravar no fallback Oracle;
+  stop
+else (não)
+  :aguardar lote ou timeout;
+endif
+:enviar lote ao ClickHouse;
+if (sucesso?) then (sim)
+  :incrementar enviados;
+  stop
+else (não)
+  :repetir até limite;
+  if (limite excedido?) then (sim)
+    :gravar no fallback;
+    if (fallback indisponível?) then (sim)
+      :incrementar PERDIDOS e emitir SEVERE;
+    endif
+  endif
+endif
+stop
+@enduml
